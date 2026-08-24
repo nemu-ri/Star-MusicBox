@@ -186,69 +186,120 @@
       return { alt: alt, az: az };
     }
 
+    function rev(deg) {
+      return deg - Math.floor(deg / 360.0) * 360.0;
+    }
+
     function getSolarSystemPositions(date) {
       const d = (date.getTime() / 86400000) - 10957.5;
+      const rad = Math.PI / 180;
+      const deg = 180 / Math.PI;
 
-      const L_sun = (280.460 + 0.9856474 * d) % 360;
-      const g_sun = (357.528 + 0.9856003 * d) * (Math.PI / 180);
-      const lambda_sun = (L_sun + 1.915 * Math.sin(g_sun) + 0.020 * Math.sin(2 * g_sun)) % 360;
-      const rad_sun = lambda_sun * (Math.PI / 180);
-      const eps = 23.439 * (Math.PI / 180);
+      const ecl = 23.4393 - 3.563E-7 * d;
+      const eclRad = ecl * rad;
 
-      const sunRa = Math.atan2(Math.cos(eps) * Math.sin(rad_sun), Math.cos(rad_sun)) * (180 / Math.PI) / 15;
-      const sunDec = Math.asin(Math.sin(eps) * Math.sin(rad_sun)) * (180 / Math.PI);
+      // 太陽の計算
+      const w_sun = 282.9404 + 4.70935E-5 * d;
+      const e_sun = 0.016709 - 1.151E-9 * d;
+      const M_sun = rev(356.0470 + 0.9856002585 * d);
+      const E_sun = M_sun + e_sun * deg * Math.sin(M_sun * rad) * (1 + e_sun * Math.cos(M_sun * rad));
+      const xv_sun = Math.cos(E_sun * rad) - e_sun;
+      const yv_sun = Math.sqrt(1.0 - e_sun * e_sun) * Math.sin(E_sun * rad);
+      const r_sun = Math.sqrt(xv_sun * xv_sun + yv_sun * yv_sun);
+      const v_sun = Math.atan2(yv_sun, xv_sun) * deg;
+      const lon_sun = rev(v_sun + w_sun);
 
-      const L_moon = (218.316 + 13.176396 * d) % 360;
-      const M_moon = (134.963 + 13.064993 * d) * (Math.PI / 180);
-      const F_moon = (93.272 + 13.229350 * d) * (Math.PI / 180);
-      const lambda_moon = (L_moon + 6.289 * Math.sin(M_moon)) % 360;
-      const beta_moon = 5.128 * Math.sin(F_moon);
-      const rad_lmoon = lambda_moon * (Math.PI / 180);
-      const rad_bmoon = beta_moon * (Math.PI / 180);
+      const xs = r_sun * Math.cos(lon_sun * rad);
+      const ys = r_sun * Math.sin(lon_sun * rad);
 
-      const moonRa = Math.atan2(Math.sin(rad_lmoon) * Math.cos(eps) - Math.tan(rad_bmoon) * Math.sin(eps), Math.cos(rad_lmoon)) * (180 / Math.PI) / 15;
-      const moonDec = Math.asin(Math.sin(rad_bmoon) * Math.cos(eps) + Math.cos(rad_bmoon) * Math.sin(eps) * Math.sin(rad_lmoon)) * (180 / Math.PI);
+      // 月の計算
+      const N_moon = rev(125.1228 - 0.0529538083 * d);
+      const i_moon = 5.1454;
+      const w_moon = rev(318.0634 + 0.1643573223 * d);
+      const a_moon = 60.2666;
+      const e_moon = 0.054900;
+      const M_moon = rev(115.3654 + 13.0649929509 * d);
 
-      const planetParams = [
-        { name: "水星", color: "#b5a7a7", size: 2.2, a: 0.387, P: 0.241, e: 0.2056, L0: 252.25, w: 77.45 },
-        { name: "金星", color: "#ffd700", size: 3.5, a: 0.723, P: 0.615, e: 0.0067, L0: 181.98, w: 131.53 },
-        { name: "火星", color: "#ff4500", size: 3.0, a: 1.524, P: 1.881, e: 0.0934, L0: 355.45, w: 336.04 },
-        { name: "木星", color: "#ffa500", size: 4.2, a: 5.203, P: 11.86, e: 0.0484, L0: 34.40,  w: 14.75 },
-        { name: "土星", color: "#f4a460", size: 3.8, a: 9.537, P: 29.46, e: 0.0541, L0: 49.94,  w: 92.43 },
-        { name: "天王星", color: "#7fffd4", size: 2.5, a: 19.19, P: 84.01, e: 0.0472, L0: 313.23, w: 170.96 },
-        { name: "海王星", color: "#4169e1", size: 2.5, a: 30.07, P: 164.8, e: 0.0086, L0: 304.88, w: 44.97 }
-      ];
+      const E_m = M_moon + e_moon * deg * Math.sin(M_moon * rad) * (1 + e_moon * Math.cos(M_moon * rad));
+      const xv_m = a_moon * (Math.cos(E_m * rad) - e_moon);
+      const yv_m = a_moon * Math.sqrt(1.0 - e_moon * e_moon) * Math.sin(E_m * rad);
+      const v_m = Math.atan2(yv_m, xv_m) * deg;
+      const r_m = Math.sqrt(xv_m * xv_m + yv_m * yv_m);
 
-      const r_sun_dist = 1.0;
-      const x_sun = r_sun_dist * Math.cos(rad_sun);
-      const y_sun = r_sun_dist * Math.sin(rad_sun);
+      const xh_m = r_m * (Math.cos(N_moon * rad) * Math.cos((v_m + w_moon) * rad) - Math.sin(N_moon * rad) * Math.sin((v_m + w_moon) * rad) * Math.cos(i_moon * rad));
+      const yh_m = r_m * (Math.sin(N_moon * rad) * Math.cos((v_m + w_moon) * rad) + Math.cos(N_moon * rad) * Math.sin((v_m + w_moon) * rad) * Math.cos(i_moon * rad));
+      const zh_m = r_m * (Math.sin((v_m + w_moon) * rad) * Math.sin(i_moon * rad));
+
+      const moon_xe = xh_m;
+      const moon_ye = yh_m * Math.cos(eclRad) - zh_m * Math.sin(eclRad);
+      const moon_ze = yh_m * Math.sin(eclRad) + zh_m * Math.cos(eclRad);
+
+      const moonRa = rev(Math.atan2(moon_ye, moon_xe) * deg) / 15;
+      const moonDec = Math.atan2(moon_ze, Math.sqrt(moon_xe * moon_xe + moon_ye * moon_ye)) * deg;
+
+      // 太陽の赤経・赤緯
+      const sun_xe = xs;
+      const sun_ye = ys * Math.cos(eclRad);
+      const sun_ze = ys * Math.sin(eclRad);
+      const sunRa = rev(Math.atan2(sun_ye, sun_xe) * deg) / 15;
+      const sunDec = Math.atan2(sun_ze, Math.sqrt(sun_xe * sun_xe + sun_ye * sun_ye)) * deg;
 
       const bodies = [
-        { name: "太陽", ra: (sunRa + 24) % 24, dec: sunDec, color: "#ffcc00", size: 5.5 },
-        { name: "月",   ra: (moonRa + 24) % 24, dec: moonDec, color: "#ffffff", size: 4.5 }
+        { name: "太陽", ra: sunRa, dec: sunDec, color: "#ffcc00", size: 5.5 },
+        { name: "月",   ra: moonRa, dec: moonDec, color: "#ffffff", size: 4.5 }
       ];
 
-      planetParams.forEach(p => {
-        const M = ((p.L0 + (365.25 * d / (p.P * 365.25)) * 360 - p.w) % 360) * (Math.PI / 180);
-        const E = M + p.e * Math.sin(M);
-        const x_plan = p.a * (Math.cos(E) - p.e);
-        const y_plan = p.a * Math.sqrt(1 - p.e * p.e) * Math.sin(E);
+      // 各惑星の軌道要素 (Paul Schlyter)
+      const planetsData = [
+        { name: "水星", N: 48.3313 + 3.24587E-5*d, i: 7.0047 + 5.00E-8*d, w: 29.1241 + 1.01444E-5*d, a: 0.387098, e: 0.205635 + 5.59E-10*d, M: 168.6562 + 4.0923344368*d, color: "#b5a7a7", size: 2.2 },
+        { name: "金星", N: 76.6799 + 2.46590E-5*d, i: 3.3946 + 2.75E-8*d, w: 54.8910 + 1.38374E-5*d, a: 0.723330, e: 0.006773 - 1.302E-9*d, M: 48.0052 + 1.6021302244*d, color: "#ffd700", size: 3.5 },
+        { name: "火星", N: 49.5574 + 2.11081E-5*d, i: 1.8497 - 1.78E-8*d, w: 286.5016 + 2.92961E-5*d, a: 1.523688, e: 0.093405 + 2.516E-9*d, M: 18.6021 + 0.5240207766*d, color: "#ff4500", size: 3.0 },
+        { name: "木星", N: 100.4542 + 2.76854E-5*d, i: 1.3030 - 1.557E-7*d, w: 273.8777 + 1.64505E-5*d, a: 5.20256, e: 0.048498 + 4.469E-9*d, M: 19.8950 + 0.0830853001*d, color: "#ffa500", size: 4.2 },
+        { name: "土星", N: 113.6655 + 2.38980E-5*d, i: 2.4886 - 1.081E-7*d, w: 339.3939 + 2.97661E-5*d, a: 9.55475, e: 0.055546 - 9.499E-9*d, M: 316.9670 + 0.0334442282*d, color: "#f4a460", size: 3.8 },
+        { name: "天王星", N: 74.0005 + 1.3978E-5*d, i: 0.7733 + 1.9E-8*d, w: 96.6612 + 3.0565E-5*d, a: 19.18171 - 1.55E-8*d, e: 0.047318 + 7.45E-9*d, M: 142.5905 + 0.011725806*d, color: "#7fffd4", size: 2.5 },
+        { name: "海王星", N: 131.7806 + 3.0173E-5*d, i: 1.7700 - 2.55E-7*d, w: 272.8461 - 6.027E-6*d, a: 30.05826 + 3.313E-8*d, e: 0.008606 + 2.15E-9*d, M: 260.2471 + 0.005995147*d, color: "#4169e1", size: 2.5 }
+      ];
 
-        const w_rad = p.w * (Math.PI / 180);
-        const x_helio = x_plan * Math.cos(w_rad) - y_plan * Math.sin(w_rad);
-        const y_helio = x_plan * Math.sin(w_rad) + y_plan * Math.cos(w_rad);
+      planetsData.forEach(p => {
+        const N = rev(p.N);
+        const i = p.i;
+        const w = rev(p.w);
+        const a = p.a;
+        const e = p.e;
+        const M = rev(p.M);
 
-        const x_geo = x_helio + x_sun;
-        const y_geo = y_helio + y_sun;
+        let E = M + e * deg * Math.sin(M * rad) * (1 + e * Math.cos(M * rad));
+        for (let k = 0; k < 3; k++) {
+          E = E - (E - e * deg * Math.sin(E * rad) - M) / (1 - e * Math.cos(E * rad));
+        }
 
-        let lambda_geo = Math.atan2(y_geo, x_geo);
-        const p_ra = Math.atan2(Math.sin(lambda_geo) * Math.cos(eps), Math.cos(lambda_geo)) * (180 / Math.PI) / 15;
-        const p_dec = Math.asin(Math.sin(eps) * Math.sin(lambda_geo)) * (180 / Math.PI);
+        const xv = a * (Math.cos(E * rad) - e);
+        const yv = a * Math.sqrt(1.0 - e * e) * Math.sin(E * rad);
+
+        const v = Math.atan2(yv, xv) * deg;
+        const r = Math.sqrt(xv * xv + yv * yv);
+
+        const xh = r * (Math.cos(N * rad) * Math.cos((v + w) * rad) - Math.sin(N * rad) * Math.sin((v + w) * rad) * Math.cos(i * rad));
+        const yh = r * (Math.sin(N * rad) * Math.cos((v + w) * rad) + Math.cos(N * rad) * Math.sin((v + w) * rad) * Math.cos(i * rad));
+        const zh = r * (Math.sin((v + w) * rad) * Math.sin(i * rad));
+
+        // 地心座標変換
+        const xg = xh + xs;
+        const yg = yh + ys;
+        const zg = zh;
+
+        // 赤道座標変換
+        const xe = xg;
+        const ye = yg * Math.cos(eclRad) - zg * Math.sin(eclRad);
+        const ze = yg * Math.sin(eclRad) + zg * Math.cos(eclRad);
+
+        const ra = rev(Math.atan2(ye, xe) * deg) / 15;
+        const dec = Math.atan2(ze, Math.sqrt(xe * xe + ye * ye)) * deg;
 
         bodies.push({
           name: p.name,
-          ra: (p_ra + 24) % 24,
-          dec: p_dec,
+          ra: ra,
+          dec: dec,
           color: p.color,
           size: p.size
         });
