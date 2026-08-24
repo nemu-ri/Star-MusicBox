@@ -17,12 +17,19 @@
 
     #info { position: absolute; top: 10px; left: 10px; font-size: 12px; color: rgba(255,255,255,0.8); z-index: 5; line-height: 1.5; pointer-events: none; }
 
-    #sidebar-toggle {
+    /* 操作ボタンのコンテナ（右上） */
+    .top-right-controls {
       position: absolute; top: 12px; right: 12px; z-index: 30;
+      display: flex; gap: 8px;
+    }
+
+    .icon-button {
       width: 44px; height: 44px; background: rgba(255,255,255,0.15); backdrop-filter: blur(8px);
       border: 1px solid rgba(255,255,255,0.3); border-radius: 50%; color: white;
       cursor: pointer; display: flex; justify-content: center; align-items: center;
+      transition: background 0.2s;
     }
+    .icon-button:active { background: rgba(255,255,255,0.3); }
 
     #sidebar {
       position: absolute; top: 0; right: 0; width: 300px; height: 100%;
@@ -90,12 +97,18 @@
 
   <div id="info">
     <div id="location-info">観測地: 東京</div>
-    <div id="sensor-info">モード: コンパスリアルタイム同期中</div>
+    <div id="sensor-info">モード: コンパス同期中</div>
   </div>
 
-  <button id="sidebar-toggle">
-    <span class="material-symbols-outlined" id="toggle-icon">settings</span>
-  </button>
+  <!-- 右上のコントロールボタン群 -->
+  <div class="top-right-controls">
+    <button class="icon-button" id="recenter-btn" title="方位をリセット">
+      <span class="material-symbols-outlined">refresh</span>
+    </button>
+    <button class="icon-button" id="sidebar-toggle" title="設定">
+      <span class="material-symbols-outlined" id="toggle-icon">settings</span>
+    </button>
+  </div>
 
   <div id="sidebar">
     <div class="sidebar-header">
@@ -419,7 +432,6 @@
       setupContinuousCompass();
     }
 
-    // どの向きで開いても常にコンパス方位をリアルタイムで追従補正する
     function setupContinuousCompass() {
       const handleOrientation = (event) => {
         if (isManualMode) return;
@@ -580,15 +592,12 @@
       } else {
         deviceControls.update();
 
-        // コンパスの値が取れている場合、ワールドグループのY軸回転を滑らかに同期補正する
         if (targetCompassHeading !== null) {
-          // 画面中央の向き（カメラの向き）とコンパスのズレを計算して吸収する
           let currentY = worldGroup.rotation.y;
-          // 最短経路で滑らかに補間 (LERP)
           let diff = targetCompassHeading - currentY;
           while (diff < -Math.PI) diff += Math.PI * 2;
           while (diff > Math.PI) diff -= Math.PI * 2;
-          worldGroup.rotation.y += diff * 0.1; // 追従の滑らかさ
+          worldGroup.rotation.y += diff * 0.1;
         }
       }
 
@@ -604,6 +613,7 @@
     const cityAccordionBtn = document.getElementById('city-accordion-btn');
     const cityAccordionContent = document.getElementById('city-accordion-content');
     const accordionArrow = document.getElementById('accordion-arrow');
+    const recenterBtn = document.getElementById('recenter-btn');
 
     sidebarToggle.addEventListener('click', () => {
       const isOpening = !sidebar.classList.contains('open');
@@ -616,6 +626,21 @@
       }
     });
 
+    // 方位リセット（再同期）ボタンの処理
+    recenterBtn.addEventListener('click', () => {
+      if (targetCompassHeading !== null) {
+        // 一気にズレを0にして現在のコンパスの向きに強制スナップさせる
+        worldGroup.rotation.y = targetCompassHeading;
+        sensorEl.innerText = "モード: 方位を強制リセットしました";
+        setTimeout(() => {
+          if (!isManualMode) sensorEl.innerText = "モード: コンパス同期中";
+        }, 2000);
+      } else {
+        // コンパス値がまだ取れていない場合はページをリロードする
+        window.location.reload();
+      }
+    });
+
     manualToggle.addEventListener('change', (e) => {
       isManualMode = e.target.checked;
       orbitControls.enabled = isManualMode;
@@ -624,7 +649,7 @@
       if (isManualMode) {
         sensorEl.innerText = "モード: 手動ドラッグ";
       } else {
-        sensorEl.innerText = "モード: コンパスリアルタイム同期中";
+        sensorEl.innerText = "モード: コンパス同期中";
       }
     });
 
