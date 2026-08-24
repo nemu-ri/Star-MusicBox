@@ -457,14 +457,13 @@
         const magRatio = 1.0 - (normMag + 1.5) / 8.0; // 1.0 (シリウス等) 〜 0.0 (6等星)
 
         // 【修正点】
-        // 暗い星の下限値を 0.25 に設定して無数の星の存在感をそのまま維持。
-        // 明るい星（magRatioが大きい星）だけを最大3.2倍まで跳ね上げて突き抜ける眩しさを表現。
-        const brightness = 0.25 + Math.pow(magRatio, 1.8) * 3.0;
+        // RGBは1.0に頭打ち（白飛び）させないよう、倍率をかけずにそのまま登録する
         const c = star.color;
-        colors.push(c.r * brightness, c.g * brightness, c.b * brightness);
+        colors.push(c.r, c.g, c.b);
 
-        // 星のサイズも最小 2.0px を確保し、明るい星は 20px 近くまで大きく描画
-        const pSize = 2.0 + Math.pow(magRatio, 2.0) * 18.0;
+        // 明るさ（輝度）は「星の描画サイズ」に掛け合わせて表現する
+        const brightness = 0.5 + Math.pow(magRatio, 1.8) * 2.5;
+        const pSize = (2.0 + Math.pow(magRatio, 2.0) * 16.0) * brightness;
         sizes.push(pSize);
       });
 
