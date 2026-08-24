@@ -106,9 +106,10 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/DeviceOrientationControls.js"></script>
 
   <script>
-    let scene, camera, renderer, starMesh, controls;
+    let scene, camera, renderer, starMesh, orbitControls, deviceControls;
     let userLat = 35.6812, userLon = 139.7671;
     let cityName = "東京";
     const locationEl = document.getElementById('location-info');
@@ -117,13 +118,6 @@
     let isManualMode = false;
     let realStarsData = [];
     let solarSystemGroup = new THREE.Group();
-
-    // センサー補完用変数（行列経由に変更）
-    const targetQuaternion = new THREE.Quaternion();
-    const zee = new THREE.Vector3(0, 0, 1);
-    const euler = new THREE.Euler();
-    const q0 = new THREE.Quaternion();
-    const q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));
 
     const cities = [
       { name: "現在地 (GPS)", lat: null, lon: null, isGps: true },
@@ -344,11 +338,16 @@
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       document.body.appendChild(renderer.domElement);
 
-      controls = new THREE.OrbitControls(camera, renderer.domElement);
-      controls.enableZoom = false;
-      controls.enablePan = false;
-      controls.rotateSpeed = -0.5;
-      controls.enabled = false;
+      // 手動操作用コントロール
+      orbitControls = new THREE.OrbitControls(camera, renderer.domElement);
+      orbitControls.enableZoom = false;
+      orbitControls.enablePan = false;
+      orbitControls.rotateSpeed = -0.5;
+      orbitControls.enabled = false;
+
+      // ジャイロ連動用標準コントロール
+      deviceControls = new THREE.DeviceOrientationControls(camera);
+      deviceControls.enabled = true;
 
       scene.add(solarSystemGroup);
 
@@ -431,46 +430,14 @@
 
     function animate() {
       requestAnimationFrame(animate);
+
       if (isManualMode) {
-        controls.update();
+        orbitControls.update();
       } else {
-        // 補完係数を 0.15 に落として超滑らかに追従させる
-        camera.quaternion.slerp(targetQuaternion, 0.15);
+        deviceControls.update();
       }
+
       renderer.render(scene, camera);
-    }
-
-    // ジンバルロックを防ぐ標準デバイス回転計算関数
-    const setObjectQuaternion = (function() {
-      const m = new THREE.Matrix4();
-      const eulerTemp = new THREE.Euler();
-
-      return function(quaternion, alpha, beta, gamma, orient) {
-        // 回転順序を 'YXZ' に固定し行列を作成
-        eulerTemp.set(beta, alpha, -gamma, 'YXZ');
-        m.makeRotationFromEuler(eulerTemp);
-
-        // カメラ座標系への調整
-        quaternion.setFromRotationMatrix(m);
-        quaternion.multiply(q1);
-        q0.setFromAxisAngle(zee, -orient);
-        quaternion.multiply(q0);
-      };
-    })();
-
-    function onDeviceOrientation(event) {
-      if (isManualMode) return;
-
-      let alpha = event.alpha ? THREE.MathUtils.degToRad(event.alpha) : 0;
-      let beta = event.beta ? THREE.MathUtils.degToRad(event.beta) : 0;
-      let gamma = event.gamma ? THREE.MathUtils.degToRad(event.gamma) : 0;
-      let orient = window.orientation ? THREE.MathUtils.degToRad(window.orientation) : 0;
-
-      if (event.webkitCompassHeading !== undefined) {
-        alpha = THREE.MathUtils.degToRad(360 - event.webkitCompassHeading);
-      }
-
-      setObjectQuaternion(targetQuaternion, alpha, beta, gamma, orient);
     }
 
     const sidebar = document.getElementById('sidebar');
@@ -487,7 +454,8 @@
 
     manualToggle.addEventListener('change', (e) => {
       isManualMode = e.target.checked;
-      controls.enabled = isManualMode;
+      orbitControls.enabled = isManualMode;
+      deviceControls.enabled = !isManualMode;
       sensorEl.innerText = isManualMode ? "モード: 手動ドラッグ" : "モード: センサー連動";
     });
 
@@ -541,19 +509,15 @@
       renderCityList();
       fetchGpsLocation();
 
-      if (typeof DeviceOrientationEvent !== 'undefined') {
-        if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-          window.addEventListener('click', async () => {
-            try {
-              const state = await DeviceOrientationEvent.requestPermission();
-              if (state === 'granted') {
-                window.addEventListener('deviceorientation', onDeviceOrientation, false);
-              }
-            } catch (e) {}
-          }, { once: true });
-        } else {
-          window.addEventListener('deviceorientation', onDeviceOrientation, false);
-        }
+      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        window.addEventListener('click', async () => {
+          try {
+            const state = await DeviceOrientationEvent.requestPermission();
+            if (state === 'granted') {
+              deviceControls.connect();
+            }
+          } catch (e) {}
+        }, { once: true });
       }
     });
   </script>
