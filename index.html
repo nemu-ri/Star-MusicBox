@@ -147,10 +147,9 @@
     let constellationGroup = new THREE.Group();
     let lastCalcTime = 0;
 
-    // 独自姿勢制御用の変数群
+    // 姿勢制御用の変数群
     let deviceAlpha = 0, deviceBeta = 0, deviceGamma = 0;
     let screenOrientation = 0;
-    let lastValidAlphaRad = 0;
 
     const euler = new THREE.Euler();
     const targetQuaternion = new THREE.Quaternion();
@@ -433,8 +432,14 @@
       return sprite;
     }
 
+    // iOS (webkitCompassHeading) と Android の絶対方位に対応
     function handleOrientation(e) {
-      deviceAlpha = e.alpha || 0;
+      if (e.webkitCompassHeading !== undefined && e.webkitCompassHeading !== null) {
+        // iOS: webkitCompassHeading (0=北, 時計回り) を使用
+        deviceAlpha = 360 - e.webkitCompassHeading;
+      } else if (e.alpha !== null) {
+        deviceAlpha = e.alpha;
+      }
       deviceBeta = e.beta || 0;
       deviceGamma = e.gamma || 0;
     }
@@ -442,35 +447,19 @@
     function updateCameraOrientation() {
       if (isManualMode) return;
 
-      // 1. 真上(90°)・真下(-90°)の手前で角度を制限
-      const safeBeta = Math.max(-88.5, Math.min(88.5, deviceBeta));
-
-      let alphaRad = deviceAlpha * (Math.PI / 180);
-      const betaRad = safeBeta * (Math.PI / 180);
-      let gammaRad = deviceGamma * (Math.PI / 180);
+      const alphaRad = deviceAlpha * (Math.PI / 180);
+      const betaRad = deviceBeta * (Math.PI / 180);
+      const gammaRad = deviceGamma * (Math.PI / 180);
       const orientRad = (screenOrientation || 0) * (Math.PI / 180);
 
-      // 上を向くほど手首の「ひねり(gamma)」の影響を弱め、斜め上でのガクつきを防止
-      if (safeBeta > 40) {
-        const upRatio = Math.max(0, Math.min(1, (safeBeta - 40) / 40));
-        gammaRad *= (1 - upRatio);
-      }
-
-      // 天頂付近（75度以上）で暴走するコンパス(alpha)を固定し、高速回転を防ぐ
-      if (Math.abs(safeBeta) > 75) {
-        alphaRad = lastValidAlphaRad;
-      } else {
-        lastValidAlphaRad = alphaRad;
-      }
-
-      // 目標の姿勢を算出
+      // 正しい物理姿勢をそのまま反映
       euler.set(betaRad, alphaRad, -gammaRad, 'YXZ');
       targetQuaternion.setFromEuler(euler);
       targetQuaternion.multiply(q1);
       targetQuaternion.multiply(q0.setFromAxisAngle(zee, -orientRad));
 
-      // 2. 急激な回転（手ぶれやセンサーの跳ね）を抑制
-      camera.quaternion.slerp(targetQuaternion, 0.1);
+      // 追従性を高めるため、クォータニオン補間を少し早めに(0.2)
+      camera.quaternion.slerp(targetQuaternion, 0.2);
     }
 
     function initThree() {
@@ -721,17 +710,26 @@
       renderCityList();
 
       const enableSensor = async () => {
+        const listenOrientation = () => {
+          // Android用の絶対方位イベントを優先、無ければ通常のイベントを使用
+          if ('ondeviceorientationabsolute' in window) {
+            window.addEventListener('deviceorientationabsolute', handleOrientation);
+          } else {
+            window.addEventListener('deviceorientation', handleOrientation);
+          }
+        };
+
         if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
           try {
             const state = await DeviceOrientationEvent.requestPermission();
             if (state === 'granted') {
-              window.addEventListener('deviceorientation', handleOrientation);
+              listenOrientation();
             }
           } catch (e) {
             console.error(e);
           }
         } else {
-          window.addEventListener('deviceorientation', handleOrientation);
+          listenOrientation();
         }
       };
 
