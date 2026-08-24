@@ -12,21 +12,69 @@
       display: flex; flex-direction: column; justify-content: center; align-items: center;
       background: rgba(5, 7, 20, 0.9); z-index: 10; text-align: center; padding: 20px; box-sizing: border-box;
     }
-    button {
+    .start-btn {
       padding: 15px 32px; font-size: 18px; cursor: pointer; background: #4a6fa5; color: white;
       border: none; border-radius: 25px; margin-top: 20px; font-weight: bold;
       box-shadow: 0 4px 15px rgba(74, 111, 165, 0.4);
     }
     #info { position: absolute; top: 10px; left: 10px; font-size: 12px; color: rgba(255,255,255,0.8); z-index: 5; line-height: 1.5; pointer-events: none; }
-    
-    /* モード切り替えボタンのスタイル */
-    #mode-btn {
-      position: absolute; top: 10px; right: 10px; z-index: 10; display: none;
-      padding: 8px 16px; font-size: 14px; background: rgba(255, 255, 255, 0.2);
-      backdrop-filter: blur(5px); color: white; border: 1px solid rgba(255,255,255,0.4);
-      border-radius: 20px; cursor: pointer; font-weight: bold; margin-top: 0; box-shadow: none;
+
+    /* サイドバー開閉用ハンバーガーボタン */
+    #sidebar-toggle {
+      position: absolute; top: 12px; right: 12px; z-index: 20; display: none;
+      width: 44px; height: 44px; background: rgba(255,255,255,0.15); backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.3); border-radius: 50%; color: white; font-size: 20px;
+      cursor: pointer; justify-content: center; align-items: center;
     }
-    #mode-btn:active { background: rgba(255, 255, 255, 0.4); }
+
+    /* スライド式サイドバー */
+    #sidebar {
+      position: absolute; top: 0; right: -280px; width: 280px; height: 100%;
+      background: rgba(10, 15, 30, 0.85); backdrop-filter: blur(12px);
+      z-index: 25; transition: right 0.3s ease; padding: 60px 20px 20px; box-sizing: border-box;
+      border-left: 1px solid rgba(255,255,255,0.1);
+    }
+    #sidebar.open { right: 0; }
+
+    .setting-item {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 25px; font-size: 14px;
+    }
+
+    /* トグルスイッチ（提供画像デザイン再現） */
+    .switch {
+      position: relative; display: inline-block; width: 52px; height: 30px;
+    }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+      background-color: #b0c4de; transition: .3s; border-radius: 30px;
+    }
+    .slider:before {
+      position: absolute; content: ""; height: 24px; width: 24px; left: 3px; bottom: 3px;
+      background-color: white; transition: .3s; border-radius: 50%;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    }
+    input:checked + .slider { background-color: #2563eb; }
+    input:checked + .slider:before { transform: translateX(22px); }
+
+    .action-btn {
+      width: 100%; padding: 12px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+      color: white; border-radius: 12px; cursor: pointer; text-align: center; margin-top: 10px;
+    }
+
+    /* 地球儀モーダル */
+    #globe-modal {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.9); z-index: 30; display: none; flex-direction: column;
+      align-items: center; justify-content: center;
+    }
+    #globe-container { width: 100%; height: 60vh; }
+    #globe-close {
+      position: absolute; top: 20px; right: 20px; background: none; border: none;
+      color: white; font-size: 28px; cursor: pointer;
+    }
+    #selected-city-text { font-size: 16px; margin-top: 15px; color: #a5b4fc; }
   </style>
 </head>
 <body>
@@ -34,7 +82,7 @@
   <div id="overlay">
     <h1>✨ リアルタイムAR星空</h1>
     <p>位置情報とジャイロセンサーを使用して<br>「いま上空にある実際の星空」を再現します。</p>
-    <button id="start-btn">位置情報を許可してスタート</button>
+    <button id="start-btn" class="start-btn">位置情報を許可してスタート</button>
   </div>
 
   <div id="info">
@@ -42,7 +90,29 @@
     <div id="sensor-info">モード: センサー連動中</div>
   </div>
 
-  <button id="mode-btn">🧭 センサー連動中</button>
+  <!-- ハンバーガーボタン ＆ サイドバー -->
+  <button id="sidebar-toggle">⚙️</button>
+  <div id="sidebar">
+    <h3>⚙️ 設定</h3>
+    
+    <div class="setting-item">
+      <span>手動操作モード</span>
+      <label class="switch">
+        <input type="checkbox" id="manual-toggle">
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <button id="open-globe-btn" class="action-btn">🌍 観測地点（地球儀）</button>
+  </div>
+
+  <!-- 地球儀選択モーダル -->
+  <div id="globe-modal">
+    <button id="globe-close">×</button>
+    <h3 style="margin: 0 0 10px 0;">地点を選択（白丸をタップ）</h3>
+    <div id="globe-container"></div>
+    <div id="selected-city-text">現在地: 自動選択中</div>
+  </div>
 
   <!-- Three.js & OrbitControls -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -50,79 +120,83 @@
 
   <script>
     let scene, camera, renderer, starMesh, controls;
-    let userLat = 35.6812, userLon = 139.7671; // 初期値: 東京
+    let userLat = 35.6812, userLon = 139.7671; // デフォルト: 東京
+    let cityName = "東京 (デフォルト)";
     const locationEl = document.getElementById('location-info');
     const sensorEl = document.getElementById('sensor-info');
-    const modeBtn = document.getElementById('mode-btn');
 
-    // モード管理フラグ (false: センサー連動, true: 手動ドラッグ)
     let isManualMode = false;
 
-    // クォータニオン制御用変数（ジンバルロック防止 & スムーズ追従）
+    // クォータニオン制御用変数
     const targetQuaternion = new THREE.Quaternion();
     const zee = new THREE.Vector3(0, 0, 1);
     const euler = new THREE.Euler();
     const q0 = new THREE.Quaternion();
-    const q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5)); // カメラ初期姿勢オフセット
+    const q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));
 
-    // 主要な明るい星のリアルデータ
+    // 選択可能都市リスト
+    const cities = [
+      { name: "東京", lat: 35.6812, lon: 139.7671 },
+      { name: "名古屋 (愛知)", lat: 35.1815, lon: 136.9064 },
+      { name: "仙台 (宮城)", lat: 38.2682, lon: 140.8694 },
+      { name: "札幌", lat: 43.0618, lon: 141.3545 },
+      { name: "大阪", lat: 34.6937, lon: 135.5023 },
+      { name: "福岡", lat: 33.5902, lon: 130.4017 },
+      { name: "那覇", lat: 26.2123, lon: 127.6792 },
+      { name: "シドニー", lat: -33.8688, lon: 151.2093 },
+      { name: "ロンドン", lat: 51.5074, lon: -0.1278 },
+      { name: "ニューヨーク", lat: 40.7128, lon: -74.0060 }
+    ];
+
     const realBrightStars = [
       { name: "シリウス", ra: 6.75, dec: -16.72, mag: -1.46 },
       { name: "カノープス", ra: 6.39, dec: -52.70, mag: -0.74 },
-      { name: "ベガ (織姫星)", ra: 18.62, dec: 38.78, mag: 0.03 },
+      { name: "ベガ", ra: 18.62, dec: 38.78, mag: 0.03 },
       { name: "アルクトゥルス", ra: 14.26, dec: 19.18, mag: -0.05 },
       { name: "カペラ", ra: 5.28, dec: 46.00, mag: 0.08 },
       { name: "リゲル", ra: 5.24, dec: -8.20, mag: 0.13 },
       { name: "プロキオン", ra: 7.65, dec: 5.22, mag: 0.38 },
       { name: "ベテルギウス", ra: 5.92, dec: 7.41, mag: 0.50 },
-      { name: "アルタイル (彦星)", ra: 19.84, dec: 8.87, mag: 0.77 },
+      { name: "アルタイル", ra: 19.84, dec: 8.87, mag: 0.77 },
       { name: "アルデバラン", ra: 4.60, dec: 16.51, mag: 0.85 },
       { name: "アンタレス", ra: 16.48, dec: -26.43, mag: 0.96 },
       { name: "スピカ", ra: 13.42, dec: -11.16, mag: 0.98 },
       { name: "ポルックス", ra: 7.76, dec: 28.03, mag: 1.14 },
       { name: "デネブ", ra: 20.69, dec: 45.28, mag: 1.25 },
       { name: "レグルス", ra: 10.14, dec: 11.97, mag: 1.36 },
-      { name: "北極星 (ポラリス)", ra: 2.53, dec: 89.26, mag: 1.97 }
+      { name: "北極星", ra: 2.53, dec: 89.26, mag: 1.97 }
     ];
 
-    // 1. 方位角(Azimuth)と高度(Altitude)の計算
     function raDecToAltAz(raHours, decDeg, latDeg, lonDeg, date) {
       const dec = decDeg * (Math.PI / 180);
       const lat = latDeg * (Math.PI / 180);
-
       const d = (date.getTime() / 86400000) - 10957.5;
       const gmst = (18.697374558 + 24.06570982441908 * d) % 24;
       const lst = (gmst + lonDeg / 15 + 24) % 24;
-      
       const ha = (lst - raHours) * 15 * (Math.PI / 180);
-
       const sinAlt = Math.sin(dec) * Math.sin(lat) + Math.cos(dec) * Math.cos(lat) * Math.cos(ha);
       const alt = Math.asin(sinAlt);
-
       const cosAz = (Math.sin(dec) - Math.sin(alt) * Math.sin(lat)) / (Math.cos(alt) * Math.cos(lat));
       let az = Math.acos(Math.max(-1, Math.min(1, cosAz)));
       if (Math.sin(ha) > 0) az = 2 * Math.PI - az;
-
       return { alt: alt, az: az };
     }
 
-    // 2. Three.js & OrbitControls 構築
     function initThree() {
       scene = new THREE.Scene();
       camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-      camera.position.set(0, 0, 0.1); // 手動制御用に少しだけずらす
+      camera.position.set(0, 0, 0.1);
 
       renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setSize(window.innerWidth, window.innerHeight);
       renderer.setPixelRatio(window.devicePixelRatio);
       document.body.appendChild(renderer.domElement);
 
-      // 手動操作用コントロール設定
       controls = new THREE.OrbitControls(camera, renderer.domElement);
-      controls.enableZoom = false; // 拡大縮小OFF（視界の距離感を固定）
-      controls.enablePan = false;  // 平行移動OFF
-      controls.rotateSpeed = -0.5; // 回転方向の反転・調整
-      controls.enabled = false;    // 初期状態はセンサー連動のためOFF
+      controls.enableZoom = false;
+      controls.enablePan = false;
+      controls.rotateSpeed = -0.5;
+      controls.enabled = false;
 
       buildRealStarField();
 
@@ -133,8 +207,9 @@
       });
     }
 
-    // 3. 星の配置
     function buildRealStarField() {
+      if (starMesh) scene.remove(starMesh);
+
       const geometry = new THREE.BufferGeometry();
       const positions = [];
       const colors = [];
@@ -143,22 +218,15 @@
 
       const allStars = [...realBrightStars];
       for (let i = 0; i < 750; i++) {
-        allStars.push({
-          ra: Math.random() * 24,
-          dec: (Math.random() - 0.5) * 180,
-          mag: 2 + Math.random() * 3
-        });
+        allStars.push({ ra: Math.random() * 24, dec: (Math.random() - 0.5) * 180, mag: 2 + Math.random() * 3 });
       }
 
       allStars.forEach(star => {
         const pos = raDecToAltAz(star.ra, star.dec, userLat, userLon, now);
-        
         const x = radius * Math.cos(pos.alt) * Math.sin(pos.az);
         const y = radius * Math.sin(pos.alt);
         const z = -radius * Math.cos(pos.alt) * Math.cos(pos.az);
-
         positions.push(x, y, z);
-
         const brightness = Math.max(0.2, 1 - (star.mag / 5));
         colors.push(brightness, brightness, brightness + 0.1);
       });
@@ -166,34 +234,23 @@
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
       geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
 
-      const material = new THREE.PointsMaterial({
-        size: 1.2,
-        vertexColors: true,
-        transparent: true,
-        opacity: 0.9
-      });
-
+      const material = new THREE.PointsMaterial({ size: 1.2, vertexColors: true, transparent: true, opacity: 0.9 });
       starMesh = new THREE.Points(geometry, material);
       scene.add(starMesh);
     }
 
-    // 4. アニメーションループ（モードに応じて処理を切替）
     function animate() {
       requestAnimationFrame(animate);
-
       if (isManualMode) {
-        controls.update(); // 手動操作の更新
+        controls.update();
       } else {
-        camera.quaternion.slerp(targetQuaternion, 0.1); // センサー追従
+        camera.quaternion.slerp(targetQuaternion, 0.1);
       }
-
       renderer.render(scene, camera);
     }
 
-    // 5. ジャイロセンサー処理
     function onDeviceOrientation(event) {
       if (event.alpha === null || isManualMode) return;
-
       const alpha = THREE.MathUtils.degToRad(event.alpha || 0);
       const beta  = THREE.MathUtils.degToRad(event.beta || 0);
       const gamma = THREE.MathUtils.degToRad(event.gamma || 0);
@@ -202,42 +259,132 @@
       euler.set(beta, alpha, -gamma, 'YXZ');
       targetQuaternion.setFromEuler(euler);
       targetQuaternion.multiply(q1);
-
       q0.setFromAxisAngle(zee, -orient);
       targetQuaternion.multiply(q0);
     }
 
-    // 6. 手動/センサー 切り替え処理
-    modeBtn.addEventListener('click', () => {
-      isManualMode = !isManualMode;
+    // --- UI & サイドバー連動ロジック ---
+    const sidebar = document.getElementById('sidebar');
+    const sidebarToggle = document.getElementById('sidebar-toggle');
+    const manualToggle = document.getElementById('manual-toggle');
 
-      if (isManualMode) {
-        controls.enabled = true;
-        modeBtn.innerText = "👆 手動操作中";
-        sensorEl.innerText = "モード: 手動ドラッグ";
-      } else {
-        controls.enabled = false;
-        modeBtn.innerText = "🧭 センサー連動中";
-        sensorEl.innerText = "モード: センサー連動";
-      }
+    sidebarToggle.addEventListener('click', () => {
+      sidebar.classList.toggle('open');
     });
 
-    // 7. 開始処理
+    manualToggle.addEventListener('change', (e) => {
+      isManualMode = e.target.checked;
+      controls.enabled = isManualMode;
+      sensorEl.innerText = isManualMode ? "モード: 手動ドラッグ" : "モード: センサー連動";
+    });
+
+    // --- 地球儀（3D Globe）インタラクション ---
+    let globeScene, globeCamera, globeRenderer, globeControls, raycaster, mouse;
+    const globeModal = document.getElementById('globe-modal');
+    const openGlobeBtn = document.getElementById('open-globe-btn');
+    const globeClose = document.getElementById('globe-close');
+    const selectedCityText = document.getElementById('selected-city-text');
+
+    openGlobeBtn.addEventListener('click', () => {
+      sidebar.classList.remove('open');
+      globeModal.style.display = 'flex';
+      if (!globeRenderer) initGlobe();
+    });
+
+    globeClose.addEventListener('click', () => {
+      globeModal.style.display = 'none';
+    });
+
+    function initGlobe() {
+      const container = document.getElementById('globe-container');
+      globeScene = new THREE.Scene();
+      globeCamera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
+      globeCamera.position.z = 250;
+
+      globeRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      globeRenderer.setSize(container.clientWidth, container.clientHeight);
+      container.appendChild(globeRenderer.domElement);
+
+      globeControls = new THREE.OrbitControls(globeCamera, globeRenderer.domElement);
+      globeControls.enablePan = false;
+
+      // 地球本体 (ワイヤーフレーム球体)
+      const globeGeo = new THREE.SphereGeometry(70, 32, 32);
+      const globeMat = new THREE.MeshBasicMaterial({ color: 0x1d4ed8, wireframe: true, transparent: true, opacity: 0.4 });
+      const globeMesh = new THREE.Mesh(globeGeo, globeMat);
+      globeScene.add(globeMesh);
+
+      // 都市プロット（白丸）
+      raycaster = new THREE.Raycaster();
+      mouse = new THREE.Vector2();
+
+      cities.forEach(city => {
+        const phi = (90 - city.lat) * (Math.PI / 180);
+        const theta = (city.lon + 180) * (Math.PI / 180);
+
+        const x = -(71 * Math.sin(phi) * Math.cos(theta));
+        const z = (71 * Math.sin(phi) * Math.sin(theta));
+        const y = (71 * Math.cos(phi));
+
+        const dotGeo = new THREE.SphereGeometry(2.5, 16, 16);
+        const dotMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        const dotMesh = new THREE.Mesh(dotGeo, dotMat);
+        dotMesh.position.set(x, y, z);
+        dotMesh.userData = city;
+        globeScene.add(dotMesh);
+      });
+
+      // クリック判定
+      globeRenderer.domElement.addEventListener('pointerdown', (e) => {
+        const rect = globeRenderer.domElement.getBoundingClientRect();
+        mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+        raycaster.setFromCamera(mouse, globeCamera);
+        const intersects = raycaster.intersectObjects(globeScene.children);
+
+        for (let i = 0; i < intersects.length; i++) {
+          if (intersects[i].object.userData.name) {
+            const city = intersects[i].object.userData;
+            userLat = city.lat;
+            userLon = city.lon;
+            cityName = city.name;
+            
+            locationEl.innerText = `観測地: ${cityName} (北緯${userLat.toFixed(1)}° 東経${userLon.toFixed(1)}°)`;
+            selectedCityText.innerText = `選択中: ${cityName}`;
+            
+            buildRealStarField(); // 星空再生成
+            break;
+          }
+        }
+      });
+
+      function animateGlobe() {
+        requestAnimationFrame(animateGlobe);
+        globeControls.update();
+        globeRenderer.render(globeScene, globeCamera);
+      }
+      animateGlobe();
+    }
+
+    // 開始処理
     document.getElementById('start-btn').addEventListener('click', async () => {
       document.getElementById('overlay').style.display = 'none';
-      modeBtn.style.display = 'block'; // スタート後に切り替えボタンを表示
+      sidebarToggle.style.display = 'flex';
 
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           (pos) => {
             userLat = pos.coords.latitude;
             userLon = pos.coords.longitude;
-            locationEl.innerText = `現在地: 北緯${userLat.toFixed(2)}° 東経${userLon.toFixed(2)}°`;
+            cityName = "現在地";
+            locationEl.innerText = `観測地: 現在地 (北緯${userLat.toFixed(2)}° 東経${userLon.toFixed(2)}°)`;
+            selectedCityText.innerText = `現在地: 自動取得成功`;
             initThree();
             animate();
           },
           (err) => {
-            locationEl.innerText = "位置情報: 取得失敗 (デフォルト東京)";
+            locationEl.innerText = `観測地: ${cityName}`;
             initThree();
             animate();
           }
