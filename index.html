@@ -115,7 +115,7 @@
     const sensorEl = document.getElementById('sensor-info');
 
     let isManualMode = false;
-    let realStarsData = []; // 実在星データを格納
+    let realStarsData = [];
 
     const targetQuaternion = new THREE.Quaternion();
     const zee = new THREE.Vector3(0, 0, 1);
@@ -139,7 +139,6 @@
       { name: "ホノルル", lat: 21.3069, lon: -157.8583 }
     ];
 
-    // 外部から肉眼で見える実在の約1000個の星（Bright Star Catalog）を取得
     async function loadRealStarCatalog() {
       try {
         const response = await fetch('https://cdn.jsdelivr.net/gh/ofrohn/d3-celestial@master/data/stars.6.json');
@@ -148,18 +147,17 @@
         realStarsData = data.features.map(f => {
           const coords = f.geometry.coordinates;
           const mag = f.properties.mag;
-          const bv = f.properties.bv || 0.4; // 色指数 (B-V)
+          const bv = f.properties.bv || 0.4;
 
-          // B-V色指数から星の色（RGB）を簡易計算
           let color = new THREE.Color(0xffffff);
-          if (bv < 0.0) color.setHex(0x9bb0ff);      // 青
-          else if (bv < 0.4) color.setHex(0xcad8ff); // 青白
-          else if (bv < 0.8) color.setHex(0xffffff); // 白
-          else if (bv < 1.2) color.setHex(0xffdd85); // 黄〜橙
-          else color.setHex(0xffa050);               // 赤橙
+          if (bv < 0.0) color.setHex(0x9bb0ff);
+          else if (bv < 0.4) color.setHex(0xcad8ff);
+          else if (bv < 0.8) color.setHex(0xffffff);
+          else if (bv < 1.2) color.setHex(0xffdd85);
+          else color.setHex(0xffa050);
 
           return {
-            ra: coords[0] / 15, // 度を時間に変換
+            ra: coords[0] / 15,
             dec: coords[1],
             mag: mag,
             color: color
@@ -220,17 +218,20 @@
       const positions = [];
       const colors = [];
       const now = new Date();
+      
+      // 全ての星を一定の距離（天球）上に配置する
       const radius = 100;
 
       realStarsData.forEach(star => {
         const pos = raDecToAltAz(star.ra, star.dec, userLat, userLon, now);
+
         const x = radius * Math.cos(pos.alt) * Math.sin(pos.az);
         const y = radius * Math.sin(pos.alt);
         const z = -radius * Math.cos(pos.alt) * Math.cos(pos.az);
         positions.push(x, y, z);
 
-        // 等級に応じた輝度調整
-        const brightness = Math.max(0.25, 1 - (star.mag / 6.0));
+        // 明るさ（輝度）のみで1等星〜6等星の主張の強さを表現
+        const brightness = Math.max(0.15, Math.min(1.0, 1 - (star.mag / 6.0)));
         const c = star.color;
         colors.push(c.r * brightness, c.g * brightness, c.b * brightness);
       });
@@ -238,11 +239,13 @@
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
       geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
 
+      // 描画サイズを小さく統一（0.7）
       const material = new THREE.PointsMaterial({
-        size: 1.5,
+        size: 0.7,
         vertexColors: true,
         transparent: true,
-        opacity: 0.95
+        opacity: 0.9,
+        sizeAttenuation: false // 距離でサイズがぶれないよう固定
       });
       
       starMesh = new THREE.Points(geometry, material);
