@@ -42,8 +42,12 @@
     const locationEl = document.getElementById('location-info');
     const sensorEl = document.getElementById('sensor-info');
 
-    // スムーズなアニメーション（LERP）用の目標角度変数
-    let targetAlpha = 0, targetBeta = 0, targetGamma = 0;
+    // クォータニオン制御用変数（ジンバルロック防止 & スムーズ追従）
+    const targetQuaternion = new THREE.Quaternion();
+    const zee = new THREE.Vector3(0, 0, 1);
+    const euler = new THREE.Euler();
+    const q0 = new THREE.Quaternion();
+    const q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5)); // カメラ初期姿勢オフセット
 
     // 主要な明るい星のリアルデータ (名: 赤経RA[h], 赤緯Dec[deg], 等級)
     const realBrightStars = [
@@ -150,34 +154,35 @@
       scene.add(starMesh);
     }
 
-    // 4. アニメーションループ（LERPによる滑らかなカメラ回転）
+    // 4. アニメーションループ（クォータニオンの球面線形補間 slerp でスムーズ追従）
     function animate() {
       requestAnimationFrame(animate);
 
-      // 補間係数（0.1 = 毎フレーム10%ずつ目標角度に近づける。値を小さくするとさらにぬるぬるになります）
-      const ease = 0.1;
-      
-      camera.rotation.order = 'YXZ';
-
-      // 360度をまたぐ際（0度↔360度の境目）の不自然な回転を防ぐ最小角度差の計算
-      let diffY = targetAlpha - camera.rotation.y;
-      while (diffY < -Math.PI) diffY += Math.PI * 2;
-      while (diffY > Math.PI) diffY -= Math.PI * 2;
-
-      camera.rotation.y += diffY * ease;
-      camera.rotation.x += (targetBeta - camera.rotation.x) * ease;
-      camera.rotation.z += (-targetGamma - camera.rotation.z) * ease;
+      // slerp (0.1 = 毎フレーム10%ずつ滑らかに目標の回転へ近づける)
+      camera.quaternion.slerp(targetQuaternion, 0.1);
 
       renderer.render(scene, camera);
     }
 
-    // 5. ジャイロセンサー値の更新（ここでは目標値の保持のみ）
+    // 5. ジャイロセンサー値のクォータニオン変換処理
     function onDeviceOrientation(event) {
       if (event.alpha === null) return;
 
-      targetAlpha = THREE.MathUtils.degToRad(event.alpha || 0);
-      targetBeta  = THREE.MathUtils.degToRad(event.beta || 0) - Math.PI / 2;
-      targetGamma = THREE.MathUtils.degToRad(event.gamma || 0);
+      const alpha = THREE.MathUtils.degToRad(event.alpha || 0); // 方位
+      const beta  = THREE.MathUtils.degToRad(event.beta || 0);  // 上下
+      const gamma = THREE.MathUtils.degToRad(event.gamma || 0); // 左右
+      const orient = THREE.MathUtils.degToRad(window.orientation || 0); // 画面の向き
+
+      // Z-X-Y 順のオイラー角からクォータニオンへ変換
+      euler.set(beta, alpha, -gamma, 'YXZ');
+      targetQuaternion.setFromEuler(euler);
+
+      // カメラのデフォルト向きオフセット補正
+      targetQuaternion.multiply(q1);
+
+      // 画面の回転（横持ち・縦持ち）の補正
+      q0.setFromAxisAngle(zee, -orient);
+      targetQuaternion.multiply(q0);
 
       sensorEl.innerText = `方位: ${Math.floor(event.alpha || 0)}° / 上下: ${Math.floor(event.beta || 0)}°`;
     }
