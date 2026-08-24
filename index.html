@@ -17,16 +17,6 @@
 
     #info { position: absolute; top: 10px; left: 10px; font-size: 12px; color: rgba(255,255,255,0.8); z-index: 5; line-height: 1.5; pointer-events: none; }
 
-    /* センサー起動用オーバーレイ */
-    #start-overlay {
-      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-      background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(4px);
-      z-index: 50; display: flex; flex-direction: column;
-      justify-content: center; align-items: center; cursor: pointer;
-      text-align: center; color: #fff;
-    }
-    #start-overlay p { margin-top: 10px; font-size: 14px; color: rgba(255,255,255,0.8); }
-
     #sidebar-toggle {
       position: absolute; top: 12px; right: 12px; z-index: 30;
       width: 44px; height: 44px; background: rgba(255,255,255,0.15); backdrop-filter: blur(8px);
@@ -98,15 +88,9 @@
 </head>
 <body>
 
-  <!-- タップ待機オーバーレイ -->
-  <div id="start-overlay">
-    <span class="material-symbols-outlined" style="font-size: 48px;">screen_rotation</span>
-    <p>画面をタップしてセンサーを起動</p>
-  </div>
-
   <div id="info">
     <div id="location-info">観測地: 東京</div>
-    <div id="sensor-info">モード: センサー準備中</div>
+    <div id="sensor-info">モード: センサー連動中</div>
   </div>
 
   <button id="sidebar-toggle">
@@ -155,7 +139,6 @@
     let cityName = "東京";
     const locationEl = document.getElementById('location-info');
     const sensorEl = document.getElementById('sensor-info');
-    const startOverlay = document.getElementById('start-overlay');
 
     let isManualMode = false;
     let showConstellations = true;
@@ -180,6 +163,7 @@
       { name: "ホノルル", lat: 21.3069, lon: -157.8583 }
     ];
 
+    // 大きくなっても「綿」にならず輝いて見えるプロポーションのテクスチャ
     function createStarTexture() {
       const canvas = document.createElement('canvas');
       canvas.width = 128;
@@ -188,6 +172,7 @@
 
       ctx.clearRect(0, 0, 128, 128);
 
+      // 1. 中心の鋭いコア（光核）
       const coreGrad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
       coreGrad.addColorStop(0.0, 'rgba(255,255,255,1.0)');
       coreGrad.addColorStop(0.05, 'rgba(255,255,255,1.0)');
@@ -201,6 +186,7 @@
       ctx.arc(64, 64, 64, 0, Math.PI * 2);
       ctx.fill();
 
+      // 2. シャープなクロスライン（光条）
       ctx.strokeStyle = 'rgba(255,255,255,0.6)';
       ctx.lineWidth = 1.8;
       
@@ -484,8 +470,10 @@
         const c = star.color;
         colors.push(c.r, c.g, c.b);
 
+        // 【修正】最小約1.8px 〜 最大約13.0px（約7.2倍の開き）に設定
+        // 指数関数（Math.pow）を用いて1等星・2等星のみをしっかり際立たせる
         const normMag = Math.max(-1.5, Math.min(6.5, star.mag));
-        const magRatio = 1.0 - (normMag + 1.5) / 8.0;
+        const magRatio = 1.0 - (normMag + 1.5) / 8.0; // 1.0(シリウス級) 〜 0.0(暗い星)
 
         const pSize = 1.8 + Math.pow(magRatio, 2.2) * 11.2;
         sizes.push(pSize);
@@ -640,7 +628,7 @@
       isManualMode = e.target.checked;
       orbitControls.enabled = isManualMode;
       deviceControls.enabled = !isManualMode;
-      sensorEl.innerText = isManualMode ? "モード: 手動ドラッグ" : "モード: センサー連動中";
+      sensorEl.innerText = isManualMode ? "モード: 手動ドラッグ" : "モード: センサー連動";
     });
 
     constellationToggle.addEventListener('change', (e) => {
@@ -698,39 +686,22 @@
       }
     }
 
-    // 【追加】ユーザーのタップ動作起点でセンサー権限を取得
-    function setupSensorPermission() {
-      const activateSensor = async () => {
-        if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-          try {
-            const state = await DeviceOrientationEvent.requestPermission();
-            if (state === 'granted') {
-              deviceControls.connect();
-              sensorEl.innerText = "モード: センサー連動中";
-            } else {
-              sensorEl.innerText = "モード: センサー拒否あり";
-            }
-          } catch (e) {
-            console.error(e);
-          }
-        } else {
-          deviceControls.connect();
-          sensorEl.innerText = "モード: センサー連動中";
-        }
-        
-        startOverlay.style.display = 'none';
-      };
-
-      startOverlay.addEventListener('click', activateSensor, { once: true });
-      startOverlay.addEventListener('touchend', activateSensor, { once: true });
-    }
-
     window.addEventListener('DOMContentLoaded', () => {
       initThree();
       animate();
       renderCityList();
       fetchGpsLocation();
-      setupSensorPermission();
+
+      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        window.addEventListener('click', async () => {
+          try {
+            const state = await DeviceOrientationEvent.requestPermission();
+            if (state === 'granted') {
+              deviceControls.connect();
+            }
+          } catch (e) {}
+        }, { once: true });
+      }
     });
   </script>
 </body>
