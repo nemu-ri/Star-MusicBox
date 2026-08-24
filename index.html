@@ -17,19 +17,12 @@
 
     #info { position: absolute; top: 10px; left: 10px; font-size: 12px; color: rgba(255,255,255,0.8); z-index: 5; line-height: 1.5; pointer-events: none; }
 
-    /* 操作ボタンのコンテナ（右上） */
-    .top-right-controls {
+    #sidebar-toggle {
       position: absolute; top: 12px; right: 12px; z-index: 30;
-      display: flex; gap: 8px;
-    }
-
-    .icon-button {
       width: 44px; height: 44px; background: rgba(255,255,255,0.15); backdrop-filter: blur(8px);
       border: 1px solid rgba(255,255,255,0.3); border-radius: 50%; color: white;
       cursor: pointer; display: flex; justify-content: center; align-items: center;
-      transition: background 0.2s;
     }
-    .icon-button:active { background: rgba(255,255,255,0.3); }
 
     #sidebar {
       position: absolute; top: 0; right: 0; width: 300px; height: 100%;
@@ -97,18 +90,12 @@
 
   <div id="info">
     <div id="location-info">観測地: 東京</div>
-    <div id="sensor-info">モード: コンパス同期中</div>
+    <div id="sensor-info">モード: センサー連動中</div>
   </div>
 
-  <!-- 右上のコントロールボタン群 -->
-  <div class="top-right-controls">
-    <button class="icon-button" id="recenter-btn" title="方位をリセット">
-      <span class="material-symbols-outlined">refresh</span>
-    </button>
-    <button class="icon-button" id="sidebar-toggle" title="設定">
-      <span class="material-symbols-outlined" id="toggle-icon">settings</span>
-    </button>
-  </div>
+  <button id="sidebar-toggle">
+    <span class="material-symbols-outlined" id="toggle-icon">settings</span>
+  </button>
 
   <div id="sidebar">
     <div class="sidebar-header">
@@ -148,7 +135,6 @@
 
   <script>
     let scene, camera, renderer, starMesh, orbitControls, deviceControls;
-    let worldGroup = new THREE.Group();
     let userLat = 35.6812, userLon = 139.7671;
     let cityName = "東京";
     const locationEl = document.getElementById('location-info');
@@ -161,9 +147,8 @@
     let solarSystemGroup = new THREE.Group();
     let constellationGroup = new THREE.Group();
     let lastCalcTime = 0;
-    
-    let targetCompassHeading = null;
 
+    // GPSオプションを削除し、都市リストのみに変更
     const cities = [
       { name: "東京", lat: 35.6812, lon: 139.7671 },
       { name: "札幌", lat: 43.0618, lon: 141.3545 },
@@ -181,8 +166,10 @@
 
     function createStarTexture() {
       const canvas = document.createElement('canvas');
-      canvas.width = 128; canvas.height = 128;
+      canvas.width = 128;
+      canvas.height = 128;
       const ctx = canvas.getContext('2d');
+
       ctx.clearRect(0, 0, 128, 128);
 
       const coreGrad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
@@ -194,10 +181,13 @@
       coreGrad.addColorStop(1.0, 'rgba(255,255,255,0.0)');
 
       ctx.fillStyle = coreGrad;
-      ctx.beginPath(); ctx.arc(64, 64, 64, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath();
+      ctx.arc(64, 64, 64, 0, Math.PI * 2);
+      ctx.fill();
 
       ctx.strokeStyle = 'rgba(255,255,255,0.6)';
       ctx.lineWidth = 1.8;
+      
       ctx.beginPath();
       ctx.moveTo(64, 16); ctx.lineTo(64, 112);
       ctx.moveTo(16, 64); ctx.lineTo(112, 64);
@@ -228,7 +218,12 @@
           else if (bv < 1.2) color.setHex(0xffdd85);
           else color.setHex(0xffa050);
 
-          return { ra: coords[0] / 15, dec: coords[1], mag: mag, color: color };
+          return {
+            ra: coords[0] / 15,
+            dec: coords[1],
+            mag: mag,
+            color: color
+          };
         });
 
         constellationLinesData = constData.features;
@@ -238,6 +233,7 @@
       }
     }
 
+    // 地平座標（高度alt, 方位角az）の正確な計算
     function raDecToAltAz(raHours, decDeg, latDeg, lonDeg, date) {
       const dec = decDeg * (Math.PI / 180);
       const lat = latDeg * (Math.PI / 180);
@@ -255,14 +251,17 @@
       return { alt: alt, az: az };
     }
 
+    // 角度からThree.jsの3D空間座標（X:東, Y:天頂, Z:南）へ正しく変換
     function altAzToVector3(alt, az, radius) {
-      const x = radius * Math.cos(alt) * Math.sin(az);
-      const y = radius * Math.sin(alt);
-      const z = -radius * Math.cos(alt) * Math.cos(az);
+      const x = radius * Math.cos(alt) * Math.sin(az);  // 東
+      const y = radius * Math.sin(alt);                  // 天頂
+      const z = -radius * Math.cos(alt) * Math.cos(az); // 北
       return new THREE.Vector3(x, y, z);
     }
 
-    function rev(deg) { return deg - Math.floor(deg / 360.0) * 360.0; }
+    function rev(deg) {
+      return deg - Math.floor(deg / 360.0) * 360.0;
+    }
 
     function getSolarSystemPositions(date) {
       const d = (date.getTime() / 86400000) - 10957.5;
@@ -331,13 +330,21 @@
       ];
 
       planetsData.forEach(p => {
-        const N = rev(p.N), i = p.i, w = rev(p.w), a = p.a, e = p.e, M = rev(p.M);
+        const N = rev(p.N);
+        const i = p.i;
+        const w = rev(p.w);
+        const a = p.a;
+        const e = p.e;
+        const M = rev(p.M);
+
         let E = M + e * deg * Math.sin(M * rad) * (1 + e * Math.cos(M * rad));
         for (let k = 0; k < 3; k++) {
           E = E - (E - e * deg * Math.sin(E * rad) - M) / (1 - e * Math.cos(E * rad));
         }
+
         const xv = a * (Math.cos(E * rad) - e);
         const yv = a * Math.sqrt(1.0 - e * e) * Math.sin(E * rad);
+
         const v = Math.atan2(yv, xv) * deg;
         const r = Math.sqrt(xv * xv + yv * yv);
 
@@ -345,13 +352,24 @@
         const yh = r * (Math.sin(N * rad) * Math.cos((v + w) * rad) + Math.cos(N * rad) * Math.sin((v + w) * rad) * Math.cos(i * rad));
         const zh = r * (Math.sin((v + w) * rad) * Math.sin(i * rad));
 
-        const xg = xh + xs, yg = yh + ys, zg = zh;
-        const xe = xg, ye = yg * Math.cos(eclRad) - zg * Math.sin(eclRad), ze = yg * Math.sin(eclRad) + zg * Math.cos(eclRad);
+        const xg = xh + xs;
+        const yg = yh + ys;
+        const zg = zh;
+
+        const xe = xg;
+        const ye = yg * Math.cos(eclRad) - zg * Math.sin(eclRad);
+        const ze = yg * Math.sin(eclRad) + zg * Math.cos(eclRad);
 
         const ra = rev(Math.atan2(ye, xe) * deg) / 15;
         const dec = Math.atan2(ze, Math.sqrt(xe * xe + ye * ye)) * deg;
 
-        bodies.push({ name: p.name, ra: ra, dec: dec, color: p.color, mag: p.mag });
+        bodies.push({
+          name: p.name,
+          ra: ra,
+          dec: dec,
+          color: p.color,
+          mag: p.mag
+        });
       });
 
       return bodies;
@@ -359,8 +377,10 @@
 
     function createGlowTexture(colorHex) {
       const canvas = document.createElement('canvas');
-      canvas.width = 128; canvas.height = 128;
+      canvas.width = 128;
+      canvas.height = 128;
       const ctx = canvas.getContext('2d');
+
       const gradient = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
       gradient.addColorStop(0.0, '#ffffff');
       gradient.addColorStop(0.2, colorHex);
@@ -368,26 +388,35 @@
       gradient.addColorStop(1.0, 'rgba(0,0,0,0)');
 
       ctx.fillStyle = gradient;
-      ctx.beginPath(); ctx.arc(64, 64, 64, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath();
+      ctx.arc(64, 64, 64, 0, Math.PI * 2);
+      ctx.fill();
+
       return new THREE.CanvasTexture(canvas);
     }
 
     function createTextSprite(text, colorCss) {
       const canvas = document.createElement('canvas');
-      canvas.width = 256; canvas.height = 128;
+      canvas.width = 256;
+      canvas.height = 128;
       const ctx = canvas.getContext('2d');
 
       ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
       if (ctx.roundRect) {
-        ctx.beginPath(); ctx.roundRect(16, 24, 224, 80, 16); ctx.fill();
-        ctx.strokeStyle = colorCss; ctx.lineWidth = 3; ctx.stroke();
+        ctx.beginPath();
+        ctx.roundRect(16, 24, 224, 80, 16);
+        ctx.fill();
+        ctx.strokeStyle = colorCss;
+        ctx.lineWidth = 3;
+        ctx.stroke();
       } else {
         ctx.fillRect(16, 24, 224, 80);
       }
 
       ctx.font = 'Bold 40px sans-serif';
       ctx.fillStyle = colorCss;
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
       ctx.fillText(text, 128, 64);
 
       const texture = new THREE.CanvasTexture(canvas);
@@ -407,8 +436,6 @@
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 3));
       document.body.appendChild(renderer.domElement);
 
-      scene.add(worldGroup);
-
       orbitControls = new THREE.OrbitControls(camera, renderer.domElement);
       orbitControls.enableZoom = false;
       orbitControls.enablePan = false;
@@ -418,8 +445,8 @@
       deviceControls = new THREE.DeviceOrientationControls(camera);
       deviceControls.enabled = true;
 
-      worldGroup.add(solarSystemGroup);
-      worldGroup.add(constellationGroup);
+      scene.add(solarSystemGroup);
+      scene.add(constellationGroup);
 
       loadRealStarCatalog();
 
@@ -428,38 +455,16 @@
         camera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth, window.innerHeight);
       });
-
-      setupContinuousCompass();
-    }
-
-    function setupContinuousCompass() {
-      const handleOrientation = (event) => {
-        if (isManualMode) return;
-
-        let compassHeading = null;
-        if (event.webkitCompassHeading !== undefined) {
-          compassHeading = event.webkitCompassHeading; // iOS
-        } else if (event.absolute && event.alpha !== null) {
-          compassHeading = (360 - event.alpha) % 360; // Android
-        }
-
-        if (compassHeading !== null) {
-          targetCompassHeading = compassHeading * (Math.PI / 180);
-        }
-      };
-
-      if ('ondeviceorientationabsolute' in window) {
-        window.addEventListener('deviceorientationabsolute', handleOrientation, true);
-      }
-      window.addEventListener('deviceorientation', handleOrientation, true);
     }
 
     function buildRealStarField() {
       if (!realStarsData.length) return;
-      if (starMesh) worldGroup.remove(starMesh);
+      if (starMesh) scene.remove(starMesh);
 
       const geometry = new THREE.BufferGeometry();
-      const positions = [], colors = [], sizes = [];
+      const positions = [];
+      const colors = [];
+      const sizes = [];
       const now = new Date();
       const radius = 100;
 
@@ -473,6 +478,7 @@
 
         const normMag = Math.max(-1.5, Math.min(6.5, star.mag));
         const magRatio = 1.0 - (normMag + 1.5) / 8.0;
+
         const pSize = 1.8 + Math.pow(magRatio, 2.2) * 11.2;
         sizes.push(pSize);
       });
@@ -482,7 +488,9 @@
       geometry.setAttribute('aSize', new THREE.Float32BufferAttribute(sizes, 1));
 
       const shaderMaterial = new THREE.ShaderMaterial({
-        uniforms: { pointTexture: { value: createStarTexture() } },
+        uniforms: {
+          pointTexture: { value: createStarTexture() }
+        },
         vertexShader: `
           attribute float aSize;
           varying vec3 vColor;
@@ -508,7 +516,7 @@
       });
       
       starMesh = new THREE.Points(geometry, shaderMaterial);
-      worldGroup.add(starMesh);
+      scene.add(starMesh);
 
       buildSolarSystem(now);
       buildConstellations(now);
@@ -524,7 +532,9 @@
 
       const radius = 99;
       const lineMaterial = new THREE.LineBasicMaterial({
-        color: 0x3a7bd5, transparent: true, opacity: 0.25
+        color: 0x3a7bd5,
+        transparent: true,
+        opacity: 0.25
       });
 
       constellationLinesData.forEach(feature => {
@@ -532,7 +542,8 @@
         lines.forEach(line => {
           const points = [];
           line.forEach(pt => {
-            const ra = pt[0] / 15, dec = pt[1];
+            const ra = pt[0] / 15;
+            const dec = pt[1];
             const pos = raDecToAltAz(ra, dec, userLat, userLon, now);
             const vec = altAzToVector3(pos.alt, pos.az, radius);
             points.push(vec);
@@ -564,7 +575,9 @@
 
         const glowTexture = createGlowTexture(body.color);
         const spriteMat = new THREE.SpriteMaterial({
-          map: glowTexture, transparent: true, blending: THREE.AdditiveBlending
+          map: glowTexture,
+          transparent: true,
+          blending: THREE.AdditiveBlending
         });
         const sprite = new THREE.Sprite(spriteMat);
         sprite.position.copy(vec);
@@ -580,6 +593,7 @@
     function animate(nowTime) {
       requestAnimationFrame(animate);
 
+      // 10秒ごとにリアルタイムで星・天体の位置を再計算して時間のズレを防止
       if (nowTime - lastCalcTime > 10000) {
         if (realStarsData.length > 0) {
           buildRealStarField();
@@ -591,14 +605,6 @@
         orbitControls.update();
       } else {
         deviceControls.update();
-
-        if (targetCompassHeading !== null) {
-          let currentY = worldGroup.rotation.y;
-          let diff = targetCompassHeading - currentY;
-          while (diff < -Math.PI) diff += Math.PI * 2;
-          while (diff > Math.PI) diff -= Math.PI * 2;
-          worldGroup.rotation.y += diff * 0.1;
-        }
       }
 
       renderer.render(scene, camera);
@@ -613,7 +619,6 @@
     const cityAccordionBtn = document.getElementById('city-accordion-btn');
     const cityAccordionContent = document.getElementById('city-accordion-content');
     const accordionArrow = document.getElementById('accordion-arrow');
-    const recenterBtn = document.getElementById('recenter-btn');
 
     sidebarToggle.addEventListener('click', () => {
       const isOpening = !sidebar.classList.contains('open');
@@ -626,31 +631,11 @@
       }
     });
 
-    // 方位リセット（再同期）ボタンの処理
-    recenterBtn.addEventListener('click', () => {
-      if (targetCompassHeading !== null) {
-        // 一気にズレを0にして現在のコンパスの向きに強制スナップさせる
-        worldGroup.rotation.y = targetCompassHeading;
-        sensorEl.innerText = "モード: 方位を強制リセットしました";
-        setTimeout(() => {
-          if (!isManualMode) sensorEl.innerText = "モード: コンパス同期中";
-        }, 2000);
-      } else {
-        // コンパス値がまだ取れていない場合はページをリロードする
-        window.location.reload();
-      }
-    });
-
     manualToggle.addEventListener('change', (e) => {
       isManualMode = e.target.checked;
       orbitControls.enabled = isManualMode;
       deviceControls.enabled = !isManualMode;
-      
-      if (isManualMode) {
-        sensorEl.innerText = "モード: 手動ドラッグ";
-      } else {
-        sensorEl.innerText = "モード: コンパス同期中";
-      }
+      sensorEl.innerText = isManualMode ? "モード: 手動ドラッグ" : "モード: センサー連動";
     });
 
     constellationToggle.addEventListener('change', (e) => {
@@ -683,18 +668,6 @@
         cityListEl.appendChild(item);
       });
     }
-
-    document.addEventListener('visibilitychange', () => {
-      if (!document.hidden) {
-        if (!isManualMode && deviceControls) {
-          deviceControls.disconnect();
-          deviceControls.connect();
-        }
-        if (realStarsData.length > 0) {
-          buildRealStarField();
-        }
-      }
-    });
 
     window.addEventListener('DOMContentLoaded', () => {
       initThree();
