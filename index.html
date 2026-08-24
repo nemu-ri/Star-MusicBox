@@ -146,12 +146,13 @@
     let constellationLinesData = [];
     let solarSystemGroup = new THREE.Group();
     let constellationGroup = new THREE.Group();
+    let lastCalcTime = 0;
 
+    // GPSオプションを削除し、都市リストのみに変更
     const cities = [
-      { name: "現在地 (GPS)", lat: null, lon: null, isGps: true },
+      { name: "東京", lat: 35.6812, lon: 139.7671 },
       { name: "札幌", lat: 43.0618, lon: 141.3545 },
       { name: "仙台 (宮城)", lat: 38.2682, lon: 140.8694 },
-      { name: "東京", lat: 35.6812, lon: 139.7671 },
       { name: "名古屋 (愛知)", lat: 35.1815, lon: 136.9064 },
       { name: "大阪", lat: 34.6937, lon: 135.5023 },
       { name: "福岡", lat: 33.5902, lon: 130.4017 },
@@ -163,7 +164,6 @@
       { name: "ホノルル", lat: 21.3069, lon: -157.8583 }
     ];
 
-    // 大きくなっても「綿」にならず輝いて見えるプロポーションのテクスチャ
     function createStarTexture() {
       const canvas = document.createElement('canvas');
       canvas.width = 128;
@@ -172,7 +172,6 @@
 
       ctx.clearRect(0, 0, 128, 128);
 
-      // 1. 中心の鋭いコア（光核）
       const coreGrad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
       coreGrad.addColorStop(0.0, 'rgba(255,255,255,1.0)');
       coreGrad.addColorStop(0.05, 'rgba(255,255,255,1.0)');
@@ -186,7 +185,6 @@
       ctx.arc(64, 64, 64, 0, Math.PI * 2);
       ctx.fill();
 
-      // 2. シャープなクロスライン（光条）
       ctx.strokeStyle = 'rgba(255,255,255,0.6)';
       ctx.lineWidth = 1.8;
       
@@ -235,6 +233,7 @@
       }
     }
 
+    // 地平座標（高度alt, 方位角az）の正確な計算
     function raDecToAltAz(raHours, decDeg, latDeg, lonDeg, date) {
       const dec = decDeg * (Math.PI / 180);
       const lat = latDeg * (Math.PI / 180);
@@ -242,12 +241,22 @@
       const gmst = (18.697374558 + 24.06570982441908 * d) % 24;
       const lst = (gmst + lonDeg / 15 + 24) % 24;
       const ha = (lst - raHours) * 15 * (Math.PI / 180);
+      
       const sinAlt = Math.sin(dec) * Math.sin(lat) + Math.cos(dec) * Math.cos(lat) * Math.cos(ha);
-      const alt = Math.asin(sinAlt);
+      const alt = Math.asin(Math.max(-1, Math.min(1, sinAlt)));
+      
       const cosAz = (Math.sin(dec) - Math.sin(alt) * Math.sin(lat)) / (Math.cos(alt) * Math.cos(lat));
       let az = Math.acos(Math.max(-1, Math.min(1, cosAz)));
       if (Math.sin(ha) > 0) az = 2 * Math.PI - az;
       return { alt: alt, az: az };
+    }
+
+    // 角度からThree.jsの3D空間座標（X:東, Y:天頂, Z:南）へ正しく変換
+    function altAzToVector3(alt, az, radius) {
+      const x = radius * Math.cos(alt) * Math.sin(az);  // 東
+      const y = radius * Math.sin(alt);                  // 天頂
+      const z = -radius * Math.cos(alt) * Math.cos(az); // 北
+      return new THREE.Vector3(x, y, z);
     }
 
     function rev(deg) {
@@ -461,19 +470,14 @@
 
       realStarsData.forEach(star => {
         const pos = raDecToAltAz(star.ra, star.dec, userLat, userLon, now);
-
-        const x = radius * Math.cos(pos.alt) * Math.sin(pos.az);
-        const y = radius * Math.sin(pos.alt);
-        const z = -radius * Math.cos(pos.alt) * Math.cos(pos.az);
-        positions.push(x, y, z);
+        const vec = altAzToVector3(pos.alt, pos.az, radius);
+        positions.push(vec.x, vec.y, vec.z);
 
         const c = star.color;
         colors.push(c.r, c.g, c.b);
 
-        // 【修正】最小約1.8px 〜 最大約13.0px（約7.2倍の開き）に設定
-        // 指数関数（Math.pow）を用いて1等星・2等星のみをしっかり際立たせる
         const normMag = Math.max(-1.5, Math.min(6.5, star.mag));
-        const magRatio = 1.0 - (normMag + 1.5) / 8.0; // 1.0(シリウス級) 〜 0.0(暗い星)
+        const magRatio = 1.0 - (normMag + 1.5) / 8.0;
 
         const pSize = 1.8 + Math.pow(magRatio, 2.2) * 11.2;
         sizes.push(pSize);
@@ -541,10 +545,8 @@
             const ra = pt[0] / 15;
             const dec = pt[1];
             const pos = raDecToAltAz(ra, dec, userLat, userLon, now);
-            const x = radius * Math.cos(pos.alt) * Math.sin(pos.az);
-            const y = radius * Math.sin(pos.alt);
-            const z = -radius * Math.cos(pos.alt) * Math.cos(pos.az);
-            points.push(new THREE.Vector3(x, y, z));
+            const vec = altAzToVector3(pos.alt, pos.az, radius);
+            points.push(vec);
           });
           const geometry = new THREE.BufferGeometry().setFromPoints(points);
           const lineMesh = new THREE.Line(geometry, lineMaterial);
@@ -564,10 +566,7 @@
 
       bodies.forEach(body => {
         const pos = raDecToAltAz(body.ra, body.dec, userLat, userLon, date);
-
-        const x = radius * Math.cos(pos.alt) * Math.sin(pos.az);
-        const y = radius * Math.sin(pos.alt);
-        const z = -radius * Math.cos(pos.alt) * Math.cos(pos.az);
+        const vec = altAzToVector3(pos.alt, pos.az, radius);
 
         let baseSize = 1.3;
         if (body.mag < -10) baseSize = 3.0;
@@ -581,18 +580,26 @@
           blending: THREE.AdditiveBlending
         });
         const sprite = new THREE.Sprite(spriteMat);
-        sprite.position.set(x, y, z);
+        sprite.position.copy(vec);
         sprite.scale.set(baseSize, baseSize, 1.0);
         solarSystemGroup.add(sprite);
 
         const label = createTextSprite(body.name, body.color);
-        label.position.set(x, y + (baseSize * 0.3 + 1.0), z);
+        label.position.set(vec.x, vec.y + (baseSize * 0.3 + 1.0), vec.z);
         solarSystemGroup.add(label);
       });
     }
 
-    function animate() {
+    function animate(nowTime) {
       requestAnimationFrame(animate);
+
+      // 10秒ごとにリアルタイムで星・天体の位置を再計算して時間のズレを防止
+      if (nowTime - lastCalcTime > 10000) {
+        if (realStarsData.length > 0) {
+          buildRealStarField();
+        }
+        lastCalcTime = nowTime;
+      }
 
       if (isManualMode) {
         orbitControls.update();
@@ -647,50 +654,25 @@
       cities.forEach(city => {
         const item = document.createElement('div');
         item.className = `city-item ${cityName === city.name ? 'active' : ''}`;
-        
-        let iconHtml = city.isGps ? '<span class="material-symbols-outlined" style="font-size:16px;">near_me</span>' : '';
-        item.innerHTML = `<span>${city.name}</span> ${iconHtml}`;
+        item.innerHTML = `<span>${city.name}</span>`;
 
         item.addEventListener('click', () => {
-          if (city.isGps) {
-            fetchGpsLocation();
-          } else {
-            userLat = city.lat;
-            userLon = city.lon;
-            cityName = city.name;
-            locationEl.innerText = `観測地: ${cityName} (北緯${userLat.toFixed(1)}° 東経${userLon.toFixed(1)}°)`;
-            buildRealStarField();
-            renderCityList();
-          }
+          userLat = city.lat;
+          userLon = city.lon;
+          cityName = city.name;
+          locationEl.innerText = `観測地: ${cityName} (北緯${userLat.toFixed(1)}° 東経${userLon.toFixed(1)}°)`;
+          buildRealStarField();
+          renderCityList();
         });
 
         cityListEl.appendChild(item);
       });
     }
 
-    function fetchGpsLocation() {
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            userLat = pos.coords.latitude;
-            userLon = pos.coords.longitude;
-            cityName = "現在地 (GPS)";
-            locationEl.innerText = `観測地: 現在地 (北緯${userLat.toFixed(2)}° 東経${userLon.toFixed(2)}°)`;
-            buildRealStarField();
-            renderCityList();
-          },
-          (err) => {
-            console.log("GPS取得スキップ（デフォルト位置で表示中）");
-          }
-        );
-      }
-    }
-
     window.addEventListener('DOMContentLoaded', () => {
       initThree();
-      animate();
+      requestAnimationFrame(animate);
       renderCityList();
-      fetchGpsLocation();
 
       if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
         window.addEventListener('click', async () => {
