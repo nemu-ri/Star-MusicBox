@@ -237,18 +237,18 @@
       const sunDec = Math.atan2(sun_ze, Math.sqrt(sun_xe * sun_xe + sun_ye * sun_ye)) * deg;
 
       const bodies = [
-        { name: "太陽", ra: sunRa, dec: sunDec, color: "#ffcc00", size: 5.5 },
-        { name: "月",   ra: moonRa, dec: moonDec, color: "#ffffff", size: 4.5 }
+        { name: "太陽", ra: sunRa, dec: sunDec, color: "#ffaa33", size: 3.5 },
+        { name: "月",   ra: moonRa, dec: moonDec, color: "#eef8ff", size: 3.0 }
       ];
 
       const planetsData = [
-        { name: "水星", N: 48.3313 + 3.24587E-5*d, i: 7.0047 + 5.00E-8*d, w: 29.1241 + 1.01444E-5*d, a: 0.387098, e: 0.205635 + 5.59E-10*d, M: 168.6562 + 4.0923344368*d, color: "#b5a7a7", size: 2.2 },
-        { name: "金星", N: 76.6799 + 2.46590E-5*d, i: 3.3946 + 2.75E-8*d, w: 54.8910 + 1.38374E-5*d, a: 0.723330, e: 0.006773 - 1.302E-9*d, M: 48.0052 + 1.6021302244*d, color: "#ffd700", size: 3.5 },
-        { name: "火星", N: 49.5574 + 2.11081E-5*d, i: 1.8497 - 1.78E-8*d, w: 286.5016 + 2.92961E-5*d, a: 1.523688, e: 0.093405 + 2.516E-9*d, M: 18.6021 + 0.5240207766*d, color: "#ff4500", size: 3.0 },
-        { name: "木星", N: 100.4542 + 2.76854E-5*d, i: 1.3030 - 1.557E-7*d, w: 273.8777 + 1.64505E-5*d, a: 5.20256, e: 0.048498 + 4.469E-9*d, M: 19.8950 + 0.0830853001*d, color: "#ffa500", size: 4.2 },
-        { name: "土星", N: 113.6655 + 2.38980E-5*d, i: 2.4886 - 1.081E-7*d, w: 339.3939 + 2.97661E-5*d, a: 9.55475, e: 0.055546 - 9.499E-9*d, M: 316.9670 + 0.0334442282*d, color: "#f4a460", size: 3.8 },
-        { name: "天王星", N: 74.0005 + 1.3978E-5*d, i: 0.7733 + 1.9E-8*d, w: 96.6612 + 3.0565E-5*d, a: 19.18171 - 1.55E-8*d, e: 0.047318 + 7.45E-9*d, M: 142.5905 + 0.011725806*d, color: "#7fffd4", size: 2.5 },
-        { name: "海王星", N: 131.7806 + 3.0173E-5*d, i: 1.7700 - 2.55E-7*d, w: 272.8461 - 6.027E-6*d, a: 30.05826 + 3.313E-8*d, e: 0.008606 + 2.15E-9*d, M: 260.2471 + 0.005995147*d, color: "#4169e1", size: 2.5 }
+        { name: "水星", N: 48.3313 + 3.24587E-5*d, i: 7.0047 + 5.00E-8*d, w: 29.1241 + 1.01444E-5*d, a: 0.387098, e: 0.205635 + 5.59E-10*d, M: 168.6562 + 4.0923344368*d, color: "#b5a7a7", size: 1.5 },
+        { name: "金星", N: 76.6799 + 2.46590E-5*d, i: 3.3946 + 2.75E-8*d, w: 54.8910 + 1.38374E-5*d, a: 0.723330, e: 0.006773 - 1.302E-9*d, M: 48.0052 + 1.6021302244*d, color: "#ffea88", size: 2.2 },
+        { name: "火星", N: 49.5574 + 2.11081E-5*d, i: 1.8497 - 1.78E-8*d, w: 286.5016 + 2.92961E-5*d, a: 1.523688, e: 0.093405 + 2.516E-9*d, M: 18.6021 + 0.5240207766*d, color: "#ff5533", size: 1.8 },
+        { name: "木星", N: 100.4542 + 2.76854E-5*d, i: 1.3030 - 1.557E-7*d, w: 273.8777 + 1.64505E-5*d, a: 5.20256, e: 0.048498 + 4.469E-9*d, M: 19.8950 + 0.0830853001*d, color: "#ffcc88", size: 2.4 },
+        { name: "土星", N: 113.6655 + 2.38980E-5*d, i: 2.4886 - 1.081E-7*d, w: 339.3939 + 2.97661E-5*d, a: 9.55475, e: 0.055546 - 9.499E-9*d, M: 316.9670 + 0.0334442282*d, color: "#f4d090", size: 2.0 },
+        { name: "天王星", N: 74.0005 + 1.3978E-5*d, i: 0.7733 + 1.9E-8*d, w: 96.6612 + 3.0565E-5*d, a: 19.18171 - 1.55E-8*d, e: 0.047318 + 7.45E-9*d, M: 142.5905 + 0.011725806*d, color: "#aaffee", size: 1.4 },
+        { name: "海王星", N: 131.7806 + 3.0173E-5*d, i: 1.7700 - 2.55E-7*d, w: 272.8461 - 6.027E-6*d, a: 30.05826 + 3.313E-8*d, e: 0.008606 + 2.15E-9*d, M: 260.2471 + 0.005995147*d, color: "#5588ff", size: 1.4 }
       ];
 
       planetsData.forEach(p => {
@@ -297,6 +297,27 @@
       return bodies;
     }
 
+    // ぼかしと発光グラデーションを持つテクスチャを生成
+    function createGlowTexture(colorHex) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 128;
+      canvas.height = 128;
+      const ctx = canvas.getContext('2d');
+
+      const gradient = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+      gradient.addColorStop(0.0, '#ffffff'); // 中心は純白で眩しく
+      gradient.addColorStop(0.2, colorHex);  // 天体本来の色
+      gradient.addColorStop(0.5, colorHex);  // 色の維持
+      gradient.addColorStop(1.0, 'rgba(0,0,0,0)'); // 外側へ綺麗に消え込む
+
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.arc(64, 64, 64, 0, Math.PI * 2);
+      ctx.fill();
+
+      return new THREE.CanvasTexture(canvas);
+    }
+
     function createTextSprite(text, colorCss) {
       const canvas = document.createElement('canvas');
       canvas.width = 256;
@@ -338,14 +359,12 @@
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       document.body.appendChild(renderer.domElement);
 
-      // 手動操作用コントロール
       orbitControls = new THREE.OrbitControls(camera, renderer.domElement);
       orbitControls.enableZoom = false;
       orbitControls.enablePan = false;
       orbitControls.rotateSpeed = -0.5;
       orbitControls.enabled = false;
 
-      // ジャイロ連動用標準コントロール
       deviceControls = new THREE.DeviceOrientationControls(camera);
       deviceControls.enabled = true;
 
@@ -416,14 +435,20 @@
         const y = radius * Math.sin(pos.alt);
         const z = -radius * Math.cos(pos.alt) * Math.cos(pos.az);
 
-        const sphereGeo = new THREE.SphereGeometry(body.size * 0.3, 16, 16);
-        const sphereMat = new THREE.MeshBasicMaterial({ color: body.color });
-        const mesh = new THREE.Mesh(sphereGeo, sphereMat);
-        mesh.position.set(x, y, z);
-        solarSystemGroup.add(mesh);
+        // 発光用グラデーションテクスチャを割り当てたスプライト（球体Meshから変更）
+        const glowTexture = createGlowTexture(body.color);
+        const spriteMat = new THREE.SpriteMaterial({
+          map: glowTexture,
+          transparent: true,
+          blending: THREE.AdditiveBlending // 光の重なりを加算合成
+        });
+        const sprite = new THREE.Sprite(spriteMat);
+        sprite.position.set(x, y, z);
+        sprite.scale.set(body.size, body.size, 1.0);
+        solarSystemGroup.add(sprite);
 
         const label = createTextSprite(body.name, body.color);
-        label.position.set(x, y + (body.size * 0.4 + 2.0), z);
+        label.position.set(x, y + (body.size * 0.5 + 1.8), z);
         solarSystemGroup.add(label);
       });
     }
