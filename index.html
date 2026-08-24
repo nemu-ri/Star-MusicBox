@@ -164,8 +164,8 @@
 
       const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
       grad.addColorStop(0.0, 'rgba(255,255,255,1.0)');
-      grad.addColorStop(0.25, 'rgba(255,255,255,0.8)');
-      grad.addColorStop(0.6, 'rgba(255,255,255,0.3)');
+      grad.addColorStop(0.2, 'rgba(255,255,255,0.8)');
+      grad.addColorStop(0.5, 'rgba(255,255,255,0.3)');
       grad.addColorStop(1.0, 'rgba(255,255,255,0.0)');
 
       ctx.fillStyle = grad;
@@ -434,6 +434,7 @@
       const geometry = new THREE.BufferGeometry();
       const positions = [];
       const colors = [];
+      const sizes = [];
       const now = new Date();
       const radius = 100;
 
@@ -445,29 +446,54 @@
         const z = -radius * Math.cos(pos.alt) * Math.cos(pos.az);
         positions.push(x, y, z);
 
-        // 暗い星（5,6等星）もしっかり認識できるよう最小輝度を0.22へ底上げ
+        // 視等級（-1.5等星 〜 6.5等星）に基づいた相対的な「輝度」と「サイズ」の動的スケール補正
         const normMag = Math.max(-1.5, Math.min(6.5, star.mag));
-        const brightness = Math.max(0.22, Math.min(1.0, 1.0 - (normMag + 1.5) / 9.5));
-        
+        const magRatio = 1.0 - (normMag + 1.5) / 8.0; // 1.0 (明るい) 〜 0.0 (暗い)
+
+        // 明るさ補正 (0.15 〜 1.0)
+        const brightness = Math.max(0.15, Math.pow(magRatio, 1.8));
         const c = star.color;
         colors.push(c.r * brightness, c.g * brightness, c.b * brightness);
+
+        // 描画サイズ補正 (1.5px 〜 12.0px) - 等級ごとに視認可能なメリハリを追加
+        const pSize = 1.5 + Math.pow(magRatio, 2.2) * 10.5;
+        sizes.push(pSize);
       });
 
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
       geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+      geometry.setAttribute('aSize', new THREE.Float32BufferAttribute(sizes, 1));
 
-      // 星の全体サイズを2.2に広げて夜空に光の粒が点在するように補正
-      const material = new THREE.PointsMaterial({
-        size: 2.2,
-        map: createStarTexture(),
+      // 個別サイズ・カラー・透過度制御用のカスタムシェーダーマテリアル
+      const shaderMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+          pointTexture: { value: createStarTexture() }
+        },
+        vertexShader: `
+          attribute float aSize;
+          varying vec3 vColor;
+          void main() {
+            vColor = color;
+            vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+            gl_PointSize = aSize * (300.0 / -mvPosition.z);
+            gl_Position = projectionMatrix * mvPosition;
+          }
+        `,
+        fragmentShader: `
+          uniform sampler2D pointTexture;
+          varying vec3 vColor;
+          void main() {
+            vec4 texColor = texture2D(pointTexture, gl_PointCoord);
+            gl_FragColor = vec4(vColor, 1.0) * texColor;
+          }
+        `,
         vertexColors: true,
         transparent: true,
         blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        sizeAttenuation: false
+        depthWrite: false
       });
       
-      starMesh = new THREE.Points(geometry, material);
+      starMesh = new THREE.Points(geometry, shaderMaterial);
       scene.add(starMesh);
 
       buildSolarSystem(now);
@@ -526,8 +552,8 @@
         const z = -radius * Math.cos(pos.alt) * Math.cos(pos.az);
 
         let baseSize = 1.3;
-        if (body.mag < -10) baseSize = 2.4;
-        else if (body.mag < -2) baseSize = 1.8;
+        if (body.mag < -10) baseSize = 3.0;
+        else if (body.mag < -2) baseSize = 2.0;
         else if (body.mag < 1) baseSize = 1.5;
 
         const glowTexture = createGlowTexture(body.color);
