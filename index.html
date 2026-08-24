@@ -13,6 +13,14 @@
 
     #info { position: absolute; top: 10px; left: 10px; font-size: 12px; color: rgba(255,255,255,0.8); z-index: 5; line-height: 1.5; pointer-events: none; }
 
+    #reload-btn {
+      position: absolute; top: 65px; left: 10px; z-index: 30;
+      background: rgba(37, 99, 235, 0.8); backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; color: white;
+      padding: 6px 10px; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 4px;
+      pointer-events: auto;
+    }
+
     #sidebar-toggle {
       position: absolute; top: 12px; right: 12px; z-index: 30;
       width: 44px; height: 44px; background: rgba(255,255,255,0.15); backdrop-filter: blur(8px);
@@ -70,9 +78,13 @@
 <body>
 
   <div id="info">
-    <div id="location-info">観測地: 東京</div>
+    <div id="location-info">観測地: 現在地を取得中...</div>
     <div id="sensor-info">モード: 画面タップでセンサー起動</div>
   </div>
+
+  <button id="reload-btn">
+    <span class="material-symbols-outlined">my_location</span> 方角・位置を再取得
+  </button>
 
   <button id="sidebar-toggle">
     <span class="material-symbols-outlined" id="toggle-icon">settings</span>
@@ -116,7 +128,7 @@
   <script>
     let scene, camera, renderer, starMesh, orbitControls;
     let userLat = 35.6812, userLon = 139.7671;
-    let cityName = "東京";
+    let cityName = "現在地（GPS）";
     const locationEl = document.getElementById('location-info');
     const sensorEl = document.getElementById('sensor-info');
 
@@ -131,10 +143,9 @@
 
     // 姿勢同期用の変数
     let deviceAlpha = 0, deviceBeta = 0, deviceGamma = 0;
-    let lockedAlpha = 0; // 天頂付近で固定する方位角
+    let lockedAlpha = 0; 
     let screenOrientation = window.orientation || 0;
 
-    // 方位をロックする境界角度（仰角約70度）
     const LOCK_THRESHOLD_PITCH = 70; 
 
     const cities = [
@@ -149,7 +160,7 @@
       { name: "ロンドン", lat: 51.5074, lon: -0.1278 },
       { name: "パリ", lat: 48.8566, lon: 2.3522 },
       { name: "シドニー", lat: -33.8688, lon: 151.2093 },
-      { name: "ホノフュ", lat: 21.3069, lon: -157.8583 }
+      { name: "ホノルル", lat: 21.3069, lon: -157.8583 }
     ];
 
     function createStarTexture() {
@@ -421,12 +432,10 @@
         deviceBeta = beta;
         deviceGamma = gamma;
 
-        // ★【コア制御】仰角が70度未満（ブレない安全域）の場合のみコンパス（Alpha）を更新
         if (Math.abs(beta) < LOCK_THRESHOLD_PITCH) {
           deviceAlpha = alpha;
-          lockedAlpha = alpha; // 最新の安定した方位をバックアップ保存
+          lockedAlpha = alpha; 
         } else {
-          // 70度以上（天頂域）に入ったら最後に安定していた方位で完全ロック
           deviceAlpha = lockedAlpha;
         }
 
@@ -453,7 +462,6 @@
       const gamma = THREE.MathUtils.degToRad(deviceGamma);
       const orient = THREE.MathUtils.degToRad(screenOrientation || 0);
 
-      // 固定/追従された方位(Alpha)の軸に対して、ピッチ(Beta)をそのまま延長回転させる
       const qx = new THREE.Quaternion();
       const qy = new THREE.Quaternion();
       const qz = new THREE.Quaternion();
@@ -469,7 +477,6 @@
       targetQuaternion.multiply(q1);
       targetQuaternion.multiply(q0.setFromAxisAngle(ze, -orient));
 
-      // 追従制御（ロック境目のカクつきも吸収）
       camera.quaternion.slerp(targetQuaternion, 0.2);
     }
 
@@ -605,6 +612,35 @@
       renderer.render(scene, camera);
     }
 
+    // ── 位置情報の取得処理 ──
+    function fetchCurrentLocation() {
+      locationEl.innerText = `観測地: 現在地を取得中...`;
+      if ("geolocation" in navigator) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            userLat = position.coords.latitude;
+            userLon = position.coords.longitude;
+            cityName = "現在地（GPS）";
+            locationEl.innerText = `観測地: ${cityName} (北緯${userLat.toFixed(1)}° 東経${userLon.toFixed(1)}°)`;
+            if (realStarsData.length > 0) buildRealStarField();
+            renderCityList();
+          },
+          (error) => {
+            console.warn("位置情報の取得に失敗しました。デフォルト位置（東京）を使用します。", error);
+            userLat = 35.6812;
+            userLon = 139.7671;
+            cityName = "東京 (デフォルト)";
+            locationEl.innerText = `観測地: ${cityName}`;
+            if (realStarsData.length > 0) buildRealStarField();
+            renderCityList();
+          },
+          { timeout: 10000, maximumAge: 60000 }
+        );
+      } else {
+        locationEl.innerText = `観測地: ${cityName}`;
+      }
+    }
+
     const sidebar = document.getElementById('sidebar');
     const sidebarToggle = document.getElementById('sidebar-toggle');
     const toggleIcon = document.getElementById('toggle-icon');
@@ -614,6 +650,7 @@
     const cityAccordionBtn = document.getElementById('city-accordion-btn');
     const cityAccordionContent = document.getElementById('city-accordion-content');
     const accordionArrow = document.getElementById('accordion-arrow');
+    const reloadBtn = document.getElementById('reload-btn');
 
     sidebarToggle.addEventListener('click', () => {
       const isOpening = !sidebar.classList.contains('open');
@@ -624,6 +661,14 @@
         sidebar.classList.remove('open');
         toggleIcon.innerText = 'settings';
       }
+    });
+
+    // 「方角・位置を再取得」ボタンの挙動
+    reloadBtn.addEventListener('click', () => {
+      fetchCurrentLocation();
+      // コンパスの方向状態もリセット
+      isCompassSynced = false;
+      sensorEl.innerText = "モード: 方角を再同期中...";
     });
 
     manualToggle.addEventListener('change', (e) => {
@@ -670,7 +715,7 @@
     window.addEventListener('DOMContentLoaded', () => {
       initThree();
       requestAnimationFrame(animate);
-      renderCityList();
+      fetchCurrentLocation(); // 起動時に現在地を取得
 
       window.addEventListener('click', () => {
         requestSensorPermission();
