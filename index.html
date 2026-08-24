@@ -116,7 +116,7 @@
 
     let isManualMode = false;[cite: 5]
     let realStarsData = [];[cite: 5]
-    let solarSystemGroup = new THREE.Group();
+    let solarSystemGroup = new THREE.Group();[cite: 5]
 
     const targetQuaternion = new THREE.Quaternion();[cite: 5]
     const zee = new THREE.Vector3(0, 0, 1);[cite: 5]
@@ -186,68 +186,64 @@
       return { alt: alt, az: az };[cite: 5]
     }
 
-    /* --- 太陽系天体の軌道計算（簡易ケプラー要素） --- */
     function getSolarSystemPositions(date) {
-      const d = (date.getTime() / 86400000) - 10957.5; // J2000.0からの経過日数
+      const d = (date.getTime() / 86400000) - 10957.5;[cite: 5]
 
-      // 太陽 (黄経)
-      const L_sun = (280.460 + 0.9856474 * d) % 360;
-      const g_sun = (357.528 + 0.9856003 * d) * (Math.PI / 180);
-      const lambda_sun = (L_sun + 1.915 * Math.sin(g_sun) + 0.020 * Math.sin(2 * g_sun)) % 360;
-      const rad_sun = lambda_sun * (Math.PI / 180);
-      const eps = 23.439 * (Math.PI / 180); // 黄道傾斜角
+      const L_sun = (280.460 + 0.9856474 * d) % 360;[cite: 5]
+      const g_sun = (357.528 + 0.9856003 * d) * (Math.PI / 180);[cite: 5]
+      const lambda_sun = (L_sun + 1.915 * Math.sin(g_sun) + 0.020 * Math.sin(2 * g_sun)) % 360;[cite: 5]
+      const rad_sun = lambda_sun * (Math.PI / 180);[cite: 5]
+      const eps = 23.439 * (Math.PI / 180);[cite: 5]
 
-      const sunRa = Math.atan2(Math.cos(eps) * Math.sin(rad_sun), Math.cos(rad_sun)) * (180 / Math.PI) / 15;
-      const sunDec = Math.asin(Math.sin(eps) * Math.sin(rad_sun)) * (180 / Math.PI);
+      const sunRa = Math.atan2(Math.cos(eps) * Math.sin(rad_sun), Math.cos(rad_sun)) * (180 / Math.PI) / 15;[cite: 5]
+      const sunDec = Math.asin(Math.sin(eps) * Math.sin(rad_sun)) * (180 / Math.PI);[cite: 5]
 
-      // 月 (簡易近似)
-      const L_moon = (218.316 + 13.176396 * d) % 360;
-      const M_moon = (134.963 + 13.064993 * d) * (Math.PI / 180);
-      const F_moon = (93.272 + 13.229350 * d) * (Math.PI / 180);
-      const lambda_moon = (L_moon + 6.289 * Math.sin(M_moon)) % 360;
-      const beta_moon = 5.128 * Math.sin(F_moon);
-      const rad_lmoon = lambda_moon * (Math.PI / 180);
-      const rad_bmoon = beta_moon * (Math.PI / 180);
+      const L_moon = (218.316 + 13.176396 * d) % 360;[cite: 5]
+      const M_moon = (134.963 + 13.064993 * d) * (Math.PI / 180);[cite: 5]
+      const F_moon = (93.272 + 13.229350 * d) * (Math.PI / 180);[cite: 5]
+      const lambda_moon = (L_moon + 6.289 * Math.sin(M_moon)) % 360;[cite: 5]
+      const beta_moon = 5.128 * Math.sin(F_moon);[cite: 5]
+      const rad_lmoon = lambda_moon * (Math.PI / 180);[cite: 5]
+      const rad_bmoon = beta_moon * (Math.PI / 180);[cite: 5]
 
-      const moonRa = Math.atan2(Math.sin(rad_lmoon) * Math.cos(eps) - Math.tan(rad_bmoon) * Math.sin(eps), Math.cos(rad_lmoon)) * (180 / Math.PI) / 15;
-      const moonDec = Math.asin(Math.sin(rad_bmoon) * Math.cos(eps) + Math.cos(rad_bmoon) * Math.sin(eps) * Math.sin(rad_lmoon)) * (180 / Math.PI);
+      const moonRa = Math.atan2(Math.sin(rad_lmoon) * Math.cos(eps) - Math.tan(rad_bmoon) * Math.sin(eps), Math.cos(rad_lmoon)) * (180 / Math.PI) / 15;[cite: 5]
+      const moonDec = Math.asin(Math.sin(rad_bmoon) * Math.cos(eps) + Math.cos(rad_bmoon) * Math.sin(eps) * Math.sin(rad_lmoon)) * (180 / Math.PI);[cite: 5]
 
-      // 惑星群 (太陽系中心座標から地心視運動への近似変換)
       const planetParams = [
-        { name: "水星", color: 0xb5a7a7, size: 2.2, a: 0.387, P: 0.241, e: 0.2056, L0: 252.25, w: 77.45 },
-        { name: "金星", color: 0xffd700, size: 3.5, a: 0.723, P: 0.615, e: 0.0067, L0: 181.98, w: 131.53 },
-        { name: "火星", color: 0xff4500, size: 3.0, a: 1.524, P: 1.881, e: 0.0934, L0: 355.45, w: 336.04 },
-        { name: "木星", color: 0xffa500, size: 4.2, a: 5.203, P: 11.86, e: 0.0484, L0: 34.40,  w: 14.75 },
-        { name: "土星", color: 0xf4a460, size: 3.8, a: 9.537, P: 29.46, e: 0.0541, L0: 49.94,  w: 92.43 },
-        { name: "天王星", color: 0x7fffd4, size: 2.5, a: 19.19, P: 84.01, e: 0.0472, L0: 313.23, w: 170.96 },
-        { name: "海王星", color: 0x4169e1, size: 2.5, a: 30.07, P: 164.8, e: 0.0086, L0: 304.88, w: 44.97 }
+        { name: "水星", color: "#b5a7a7", size: 2.2, a: 0.387, P: 0.241, e: 0.2056, L0: 252.25, w: 77.45 },
+        { name: "金星", color: "#ffd700", size: 3.5, a: 0.723, P: 0.615, e: 0.0067, L0: 181.98, w: 131.53 },
+        { name: "火星", color: "#ff4500", size: 3.0, a: 1.524, P: 1.881, e: 0.0934, L0: 355.45, w: 336.04 },
+        { name: "木星", color: "#ffa500", size: 4.2, a: 5.203, P: 11.86, e: 0.0484, L0: 34.40,  w: 14.75 },
+        { name: "土星", color: "#f4a460", size: 3.8, a: 9.537, P: 29.46, e: 0.0541, L0: 49.94,  w: 92.43 },
+        { name: "天王星", color: "#7fffd4", size: 2.5, a: 19.19, P: 84.01, e: 0.0472, L0: 313.23, w: 170.96 },
+        { name: "海王星", color: "#4169e1", size: 2.5, a: 30.07, P: 164.8, e: 0.0086, L0: 304.88, w: 44.97 }
       ];
 
-      const r_sun_dist = 1.0;
-      const x_sun = r_sun_dist * Math.cos(rad_sun);
-      const y_sun = r_sun_dist * Math.sin(rad_sun);
+      const r_sun_dist = 1.0;[cite: 5]
+      const x_sun = r_sun_dist * Math.cos(rad_sun);[cite: 5]
+      const y_sun = r_sun_dist * Math.sin(rad_sun);[cite: 5]
 
       const bodies = [
-        { name: "太陽", ra: (sunRa + 24) % 24, dec: sunDec, color: 0xffcc00, size: 6.0 },
-        { name: "月",   ra: (moonRa + 24) % 24, dec: moonDec, color: 0xffffff, size: 5.0 }
+        { name: "太陽", ra: (sunRa + 24) % 24, dec: sunDec, color: "#ffcc00", size: 5.5 },
+        { name: "月",   ra: (moonRa + 24) % 24, dec: moonDec, color: "#ffffff", size: 4.5 }
       ];
 
       planetParams.forEach(p => {
-        const M = ((p.L0 + (365.25 * d / (p.P * 365.25)) * 360 - p.w) % 360) * (Math.PI / 180);
-        const E = M + p.e * Math.sin(M);
-        const x_plan = p.a * (Math.cos(E) - p.e);
-        const y_plan = p.a * Math.sqrt(1 - p.e * p.e) * Math.sin(E);
+        const M = ((p.L0 + (365.25 * d / (p.P * 365.25)) * 360 - p.w) % 360) * (Math.PI / 180);[cite: 5]
+        const E = M + p.e * Math.sin(M);[cite: 5]
+        const x_plan = p.a * (Math.cos(E) - p.e);[cite: 5]
+        const y_plan = p.a * Math.sqrt(1 - p.e * p.e) * Math.sin(E);[cite: 5]
 
-        const w_rad = p.w * (Math.PI / 180);
-        const x_helio = x_plan * Math.cos(w_rad) - y_plan * Math.sin(w_rad);
-        const y_helio = x_plan * Math.sin(w_rad) + y_plan * Math.cos(w_rad);
+        const w_rad = p.w * (Math.PI / 180);[cite: 5]
+        const x_helio = x_plan * Math.cos(w_rad) - y_plan * Math.sin(w_rad);[cite: 5]
+        const y_helio = x_plan * Math.sin(w_rad) + y_plan * Math.cos(w_rad);[cite: 5]
 
-        const x_geo = x_helio + x_sun;
-        const y_geo = y_helio + y_sun;
+        const x_geo = x_helio + x_sun;[cite: 5]
+        const y_geo = y_helio + y_sun;[cite: 5]
 
-        let lambda_geo = Math.atan2(y_geo, x_geo);
-        const p_ra = Math.atan2(Math.sin(lambda_geo) * Math.cos(eps), Math.cos(lambda_geo)) * (180 / Math.PI) / 15;
-        const p_dec = Math.asin(Math.sin(eps) * Math.sin(lambda_geo)) * (180 / Math.PI);
+        let lambda_geo = Math.atan2(y_geo, x_geo);[cite: 5]
+        const p_ra = Math.atan2(Math.sin(lambda_geo) * Math.cos(eps), Math.cos(lambda_geo)) * (180 / Math.PI) / 15;[cite: 5]
+        const p_dec = Math.asin(Math.sin(eps) * Math.sin(lambda_geo)) * (180 / Math.PI);[cite: 5]
 
         bodies.push({
           name: p.name,
@@ -261,20 +257,33 @@
       return bodies;
     }
 
-    function createTextSprite(text, colorHex) {
+    // エラーを起こさずキレイな半透明ラベルタグを画像化する関数
+    function createTextSprite(text, colorCss) {
       const canvas = document.createElement('canvas');
-      canvas.width = 128;
-      canvas.height = 64;
+      canvas.width = 256;
+      canvas.height = 128;
       const ctx = canvas.getContext('2d');
-      ctx.font = 'Bold 24px sans-serif';
-      ctx.fillStyle = '#' + colorHex.toString(16).padStart(6, '0');
+
+      // 背景の黒い角丸タグ
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+      ctx.beginPath();
+      ctx.roundRect(16, 24, 224, 80, 16);
+      ctx.fill();
+      ctx.strokeStyle = colorCss;
+      ctx.lineWidth = 4;
+      ctx.stroke();
+
+      // 文字描画
+      ctx.font = 'Bold 42px sans-serif';
+      ctx.fillStyle = colorCss;
       ctx.textAlign = 'center';
-      ctx.fillText(text, 64, 40);
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, 128, 64);
 
       const texture = new THREE.CanvasTexture(canvas);
       const spriteMaterial = new THREE.SpriteMaterial({ map: texture, transparent: true });
       const sprite = new THREE.Sprite(spriteMaterial);
-      sprite.scale.set(12, 6, 1);
+      sprite.scale.set(6, 3, 1); // 扱いやすいサイズ感に調整
       return sprite;
     }
 
@@ -294,7 +303,7 @@
       controls.rotateSpeed = -0.5;[cite: 5]
       controls.enabled = false;[cite: 5]
 
-      scene.add(solarSystemGroup);
+      scene.add(solarSystemGroup);[cite: 5]
 
       loadRealStarCatalog();[cite: 5]
 
@@ -342,37 +351,35 @@
       starMesh = new THREE.Points(geometry, material);[cite: 5]
       scene.add(starMesh);[cite: 5]
 
-      // 太陽系天体の生成・配置
-      buildSolarSystem(now);
+      buildSolarSystem(now);[cite: 5]
     }
 
     function buildSolarSystem(date) {
-      // 既存の天体オブジェクトを消去
       while (solarSystemGroup.children.length > 0) {
         const obj = solarSystemGroup.children[0];
         solarSystemGroup.remove(obj);
       }
 
-      const radius = 95; // 恒星より僅かに手前
-      const bodies = getSolarSystemPositions(date);
+      const radius = 95;[cite: 5]
+      const bodies = getSolarSystemPositions(date);[cite: 5]
 
       bodies.forEach(body => {
-        const pos = raDecToAltAz(body.ra, body.dec, userLat, userLon, date);
+        const pos = raDecToAltAz(body.ra, body.dec, userLat, userLon, date);[cite: 5]
 
-        const x = radius * Math.cos(pos.alt) * Math.sin(pos.az);
-        const y = radius * Math.sin(pos.alt);
-        const z = -radius * Math.cos(pos.alt) * Math.cos(pos.az);
+        const x = radius * Math.cos(pos.alt) * Math.sin(pos.az);[cite: 5]
+        const y = radius * Math.sin(pos.alt);[cite: 5]
+        const z = -radius * Math.cos(pos.alt) * Math.cos(pos.az);[cite: 5]
 
-        // 天体本体（球体メッシュ）
-        const sphereGeo = new THREE.SphereGeometry(body.size * 0.4, 16, 16);
+        // 天体本体
+        const sphereGeo = new THREE.SphereGeometry(body.size * 0.3, 16, 16);
         const sphereMat = new THREE.MeshBasicMaterial({ color: body.color });
         const mesh = new THREE.Mesh(sphereGeo, sphereMat);
         mesh.position.set(x, y, z);
         solarSystemGroup.add(mesh);
 
-        // ラベルテキスト
+        // 文字タグ（天体のすぐ上に配置）
         const label = createTextSprite(body.name, body.color);
-        label.position.set(x * 1.05, y * 1.05 + 1.5, z * 1.05);
+        label.position.set(x, y + (body.size * 0.4 + 2.0), z);
         solarSystemGroup.add(label);
       });
     }
@@ -388,24 +395,23 @@
     }
 
     function onDeviceOrientation(event) {
-      if (isManualMode) return;
+      if (isManualMode) return;[cite: 5]
 
-      // iOSのコンパス（絶対方位）補正処理
-      let alpha = event.alpha || 0;
-      if (event.webkitCompassHeading !== undefined) {
-        alpha = 360 - event.webkitCompassHeading;
+      let alpha = event.alpha || 0;[cite: 5]
+      if (event.webkitCompassHeading !== undefined) {[cite: 5]
+        alpha = 360 - event.webkitCompassHeading;[cite: 5]
       }
 
-      const alphaRad = THREE.MathUtils.degToRad(alpha);
-      const betaRad  = THREE.MathUtils.degToRad(event.beta || 0);
-      const gammaRad = THREE.MathUtils.degToRad(event.gamma || 0);
-      const orient   = THREE.MathUtils.degToRad(window.orientation || 0);
+      const alphaRad = THREE.MathUtils.degToRad(alpha);[cite: 5]
+      const betaRad  = THREE.MathUtils.degToRad(event.beta || 0);[cite: 5]
+      const gammaRad = THREE.MathUtils.degToRad(event.gamma || 0);[cite: 5]
+      const orient   = THREE.MathUtils.degToRad(window.orientation || 0);[cite: 5]
 
-      euler.set(betaRad, alphaRad, -gammaRad, 'YXZ');
-      targetQuaternion.setFromEuler(euler);
-      targetQuaternion.multiply(q1);
-      q0.setFromAxisAngle(zee, -orient);
-      targetQuaternion.multiply(q0);
+      euler.set(betaRad, alphaRad, -gammaRad, 'YXZ');[cite: 5]
+      targetQuaternion.setFromEuler(euler);[cite: 5]
+      targetQuaternion.multiply(q1);[cite: 5]
+      q0.setFromAxisAngle(zee, -orient);[cite: 5]
+      targetQuaternion.multiply(q0);[cite: 5]
     }
 
     const sidebar = document.getElementById('sidebar');[cite: 5]
