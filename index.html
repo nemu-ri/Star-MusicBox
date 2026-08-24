@@ -9,11 +9,7 @@
     body { margin: 0; overflow: hidden; background: #000; color: #fff; font-family: sans-serif; }
     canvas { display: block; }
     
-    .material-symbols-outlined {
-      font-size: 20px;
-      vertical-align: middle;
-      user-select: none;
-    }
+    .material-symbols-outlined { font-size: 20px; vertical-align: middle; user-select: none; }
 
     #info { position: absolute; top: 10px; left: 10px; font-size: 12px; color: rgba(255,255,255,0.8); z-index: 5; line-height: 1.5; pointer-events: none; }
 
@@ -29,29 +25,17 @@
       background: rgba(10, 15, 30, 0.92); backdrop-filter: blur(12px);
       z-index: 25; padding: 60px 20px 20px; box-sizing: border-box;
       border-left: 1px solid rgba(255,255,255,0.1);
-      display: none; opacity: 0;
-      transform: translateX(100%);
+      display: none; opacity: 0; transform: translateX(100%);
       transition: opacity 0.25s ease, transform 0.25s ease;
       flex-direction: column; overflow-y: auto;
     }
-    #sidebar.open {
-      display: flex;
-      opacity: 1;
-      transform: translateX(0);
-    }
+    #sidebar.open { display: flex; opacity: 1; transform: translateX(0); }
 
-    .sidebar-header {
-      font-size: 18px; font-weight: bold; margin-bottom: 20px; display: flex; align-items: center; gap: 8px;
-    }
+    .sidebar-header { font-size: 18px; font-weight: bold; margin-bottom: 20px; display: flex; align-items: center; gap: 8px; }
 
-    .setting-item {
-      display: flex; justify-content: space-between; align-items: center;
-      margin-bottom: 20px; font-size: 14px;
-    }
+    .setting-item { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; font-size: 14px; }
 
-    .switch {
-      position: relative; display: inline-block; width: 52px; height: 30px;
-    }
+    .switch { position: relative; display: inline-block; width: 52px; height: 30px; }
     .switch input { opacity: 0; width: 0; height: 0; }
     .slider {
       position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
@@ -70,10 +54,7 @@
       display: flex; justify-content: space-between; align-items: center;
       padding: 8px 12px; background: rgba(255,255,255,0.05); border-radius: 8px;
     }
-    .accordion-content {
-      max-height: 0; overflow: hidden; transition: max-height 0.3s ease;
-      border-radius: 8px; background: rgba(0,0,0,0.2);
-    }
+    .accordion-content { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; border-radius: 8px; background: rgba(0,0,0,0.2); }
     .accordion-content.open { max-height: 240px; overflow-y: auto; margin-bottom: 15px; }
 
     #city-list { border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; }
@@ -150,9 +131,11 @@
 
     // 姿勢同期用の変数
     let deviceAlpha = 0, deviceBeta = 0, deviceGamma = 0;
-    let smoothAlpha = 0, smoothBeta = 0, smoothGamma = 0;
-    let isFilterInitialized = false;
+    let lockedAlpha = 0; // 天頂付近で固定する方位角
     let screenOrientation = window.orientation || 0;
+
+    // 方位をロックする境界角度（仰角約70度）
+    const LOCK_THRESHOLD_PITCH = 70; 
 
     const cities = [
       { name: "東京", lat: 35.6812, lon: 139.7671 },
@@ -166,7 +149,7 @@
       { name: "ロンドン", lat: 51.5074, lon: -0.1278 },
       { name: "パリ", lat: 48.8566, lon: 2.3522 },
       { name: "シドニー", lat: -33.8688, lon: 151.2093 },
-      { name: "ホノルル", lat: 21.3069, lon: -157.8583 }
+      { name: "ホノフュ", lat: 21.3069, lon: -157.8583 }
     ];
 
     function createStarTexture() {
@@ -246,9 +229,9 @@
     }
 
     function altAzToVector3(alt, az, radius) {
-      const x = radius * Math.cos(alt) * Math.sin(az);  // 東 = +X
-      const y = radius * Math.sin(alt);                  // 天頂 = +Y
-      const z = -radius * Math.cos(alt) * Math.cos(az); // 北 = -Z
+      const x = radius * Math.cos(alt) * Math.sin(az);
+      const y = radius * Math.sin(alt);
+      const z = -radius * Math.cos(alt) * Math.cos(az);
       return new THREE.Vector3(x, y, z);
     }
 
@@ -435,9 +418,17 @@
           alpha = e.alpha;
         }
 
-        deviceAlpha = alpha;
         deviceBeta = beta;
         deviceGamma = gamma;
+
+        // ★【コア制御】仰角が70度未満（ブレない安全域）の場合のみコンパス（Alpha）を更新
+        if (Math.abs(beta) < LOCK_THRESHOLD_PITCH) {
+          deviceAlpha = alpha;
+          lockedAlpha = alpha; // 最新の安定した方位をバックアップ保存
+        } else {
+          // 70度以上（天頂域）に入ったら最後に安定していた方位で完全ロック
+          deviceAlpha = lockedAlpha;
+        }
 
         if (!isCompassSynced && (e.webkitCompassHeading !== undefined || e.absolute)) {
           isCompassSynced = true;
@@ -449,47 +440,20 @@
       window.addEventListener('deviceorientation', handleOrientation, true);
     }
 
-    // 0度/360度跨ぎをスムーズにする平滑化関数
-    function smoothAngle(current, target, factor) {
-      let diff = target - current;
-      while (diff < -180) diff += 360;
-      while (diff > 180) diff -= 360;
-      return current + diff * factor;
-    }
-
     const ze = new THREE.Vector3(0, 0, 1);
     const targetQuaternion = new THREE.Quaternion();
     const q0 = new THREE.Quaternion();
-    const q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5)); // -90 deg X
+    const q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));
 
     function updateCameraOrientation() {
       if (isManualMode) return;
 
-      if (!isFilterInitialized) {
-        smoothAlpha = deviceAlpha;
-        smoothBeta = deviceBeta;
-        smoothGamma = deviceGamma;
-        isFilterInitialized = true;
-      }
-
-      // 天頂(90度)に近づくほどAlpha(コンパス)の暴れを強力に平滑化
-      const pitchAbs = Math.abs(deviceBeta);
-      let alphaFactor = 0.25;
-      if (pitchAbs > 45) {
-        const t = (pitchAbs - 45) / 45;
-        alphaFactor = THREE.MathUtils.lerp(0.25, 0.02, Math.min(1, t));
-      }
-
-      smoothAlpha = smoothAngle(smoothAlpha, deviceAlpha, alphaFactor);
-      smoothBeta = smoothAngle(smoothBeta, deviceBeta, 0.2);
-      smoothGamma = smoothAngle(smoothGamma, deviceGamma, 0.2);
-
-      const alpha = THREE.MathUtils.degToRad(smoothAlpha);
-      const beta = THREE.MathUtils.degToRad(smoothBeta);
-      const gamma = THREE.MathUtils.degToRad(smoothGamma);
+      const alpha = THREE.MathUtils.degToRad(deviceAlpha);
+      const beta = THREE.MathUtils.degToRad(deviceBeta);
+      const gamma = THREE.MathUtils.degToRad(deviceGamma);
       const orient = THREE.MathUtils.degToRad(screenOrientation || 0);
 
-      // クォータニオンによる直接合成 (ジンバルロック/垂直ブレを完全回避)
+      // 固定/追従された方位(Alpha)の軸に対して、ピッチ(Beta)をそのまま延長回転させる
       const qx = new THREE.Quaternion();
       const qy = new THREE.Quaternion();
       const qz = new THREE.Quaternion();
@@ -505,7 +469,7 @@
       targetQuaternion.multiply(q1);
       targetQuaternion.multiply(q0.setFromAxisAngle(ze, -orient));
 
-      // 最終姿勢にスムーズに追従
+      // 追従制御（ロック境目のカクつきも吸収）
       camera.quaternion.slerp(targetQuaternion, 0.2);
     }
 
