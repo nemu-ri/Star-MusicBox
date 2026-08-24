@@ -163,36 +163,36 @@
       { name: "ホノルル", lat: 21.3069, lon: -157.8583 }
     ];
 
-    // 【修正】綿のようにならず、核がシャープに輝くテクスチャを作成
+    // 大きくなっても「綿」にならず輝いて見えるプロポーションのテクスチャ
     function createStarTexture() {
       const canvas = document.createElement('canvas');
-      canvas.width = 64;
-      canvas.height = 64;
+      canvas.width = 128;
+      canvas.height = 128;
       const ctx = canvas.getContext('2d');
 
-      // 背景クリア
-      ctx.clearRect(0, 0, 64, 64);
+      ctx.clearRect(0, 0, 128, 128);
 
-      // 中心部（核）のシャープな円
-      const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
-      grad.addColorStop(0.0, 'rgba(255,255,255,1.0)');
-      grad.addColorStop(0.08, 'rgba(255,255,255,0.9)');
-      grad.addColorStop(0.25, 'rgba(255,255,255,0.3)');
-      grad.addColorStop(0.6, 'rgba(255,255,255,0.05)');
-      grad.addColorStop(1.0, 'rgba(255,255,255,0.0)');
+      // 1. 中心の鋭いコア（光核）
+      const coreGrad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+      coreGrad.addColorStop(0.0, 'rgba(255,255,255,1.0)');
+      coreGrad.addColorStop(0.05, 'rgba(255,255,255,1.0)');
+      coreGrad.addColorStop(0.12, 'rgba(255,255,255,0.8)');
+      coreGrad.addColorStop(0.3, 'rgba(255,255,255,0.15)');
+      coreGrad.addColorStop(0.7, 'rgba(255,255,255,0.02)');
+      coreGrad.addColorStop(1.0, 'rgba(255,255,255,0.0)');
 
-      ctx.fillStyle = grad;
+      ctx.fillStyle = coreGrad;
       ctx.beginPath();
-      ctx.arc(32, 32, 32, 0, Math.PI * 2);
+      ctx.arc(64, 64, 64, 0, Math.PI * 2);
       ctx.fill();
 
-      // 星らしい交差光（十字の鋭いライン）を追加
-      ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-      ctx.lineWidth = 1.5;
+      // 2. シャープなクロスライン（光条）
+      ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+      ctx.lineWidth = 1.8;
       
       ctx.beginPath();
-      ctx.moveTo(32, 8); ctx.lineTo(32, 56);
-      ctx.moveTo(8, 32); ctx.lineTo(56, 32);
+      ctx.moveTo(64, 16); ctx.lineTo(64, 112);
+      ctx.moveTo(16, 64); ctx.lineTo(112, 64);
       ctx.stroke();
 
       return new THREE.CanvasTexture(canvas);
@@ -470,12 +470,12 @@
         const c = star.color;
         colors.push(c.r, c.g, c.b);
 
-        // 【修正】シリウス等の1等星でも肥大化しすぎないスマートな点サイズ計算
+        // 【修正】最小約1.8px 〜 最大約13.0px（約7.2倍の開き）に設定
+        // 指数関数（Math.pow）を用いて1等星・2等星のみをしっかり際立たせる
         const normMag = Math.max(-1.5, Math.min(6.5, star.mag));
-        const magRatio = 1.0 - (normMag + 1.5) / 8.0; // 1.0(明るい) 〜 0.0(暗い)
+        const magRatio = 1.0 - (normMag + 1.5) / 8.0; // 1.0(シリウス級) 〜 0.0(暗い星)
 
-        // 最小2.5px、最大10.0px程度に抑えて「点」らしさを保つ
-        const pSize = 2.5 + Math.pow(magRatio, 2.5) * 7.5;
+        const pSize = 1.8 + Math.pow(magRatio, 2.2) * 11.2;
         sizes.push(pSize);
       });
 
@@ -493,8 +493,7 @@
           void main() {
             vColor = color;
             vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-            // 【修正】シェーダー側の倍率を調整し、綿のようにならずキュッと締まるように変更
-            gl_PointSize = aSize * (160.0 / -mvPosition.z);
+            gl_PointSize = aSize * (180.0 / -mvPosition.z);
             gl_Position = projectionMatrix * mvPosition;
           }
         `,
