@@ -42,6 +42,9 @@
     const locationEl = document.getElementById('location-info');
     const sensorEl = document.getElementById('sensor-info');
 
+    // スムーズなアニメーション（LERP）用の目標角度変数
+    let targetAlpha = 0, targetBeta = 0, targetGamma = 0;
+
     // 主要な明るい星のリアルデータ (名: 赤経RA[h], 赤緯Dec[deg], 等級)
     const realBrightStars = [
       { name: "シリウス", ra: 6.75, dec: -16.72, mag: -1.46 },
@@ -67,23 +70,20 @@
       const dec = decDeg * (Math.PI / 180);
       const lat = latDeg * (Math.PI / 180);
 
-      // 恒星時（GST / LST）の簡易計算
       const d = (date.getTime() / 86400000) - 10957.5;
       const gmst = (18.697374558 + 24.06570982441908 * d) % 24;
       const lst = (gmst + lonDeg / 15 + 24) % 24;
       
-      const ha = (lst - raHours) * 15 * (Math.PI / 180); // 時角
+      const ha = (lst - raHours) * 15 * (Math.PI / 180);
 
-      // 高度 (Altitude)
       const sinAlt = Math.sin(dec) * Math.sin(lat) + Math.cos(dec) * Math.cos(lat) * Math.cos(ha);
       const alt = Math.asin(sinAlt);
 
-      // 方位角 (Azimuth)
       const cosAz = (Math.sin(dec) - Math.sin(alt) * Math.sin(lat)) / (Math.cos(alt) * Math.cos(lat));
       let az = Math.acos(Math.max(-1, Math.min(1, cosAz)));
       if (Math.sin(ha) > 0) az = 2 * Math.PI - az;
 
-      return { alt: alt, az: az }; // ラジアンで返す
+      return { alt: alt, az: az };
     }
 
     // 2. Three.js の空間構築
@@ -114,7 +114,6 @@
       const now = new Date();
       const radius = 100;
 
-      // 有名な16の1等星＋ダミー背景星(計約800個)を生成
       const allStars = [...realBrightStars];
       for (let i = 0; i < 750; i++) {
         allStars.push({
@@ -125,17 +124,14 @@
       }
 
       allStars.forEach(star => {
-        // 方位と高度をリアルタイム計算
         const pos = raDecToAltAz(star.ra, star.dec, userLat, userLon, now);
         
-        // 方位角・高度から3D座標(X,Y,Z)へ変換
         const x = radius * Math.cos(pos.alt) * Math.sin(pos.az);
         const y = radius * Math.sin(pos.alt);
         const z = -radius * Math.cos(pos.alt) * Math.cos(pos.az);
 
         positions.push(x, y, z);
 
-        // 明るさ（等級）に応じた色の調整
         const brightness = Math.max(0.2, 1 - (star.mag / 5));
         colors.push(brightness, brightness, brightness + 0.1);
       });
@@ -154,33 +150,42 @@
       scene.add(starMesh);
     }
 
+    // 4. アニメーションループ（LERPによる滑らかなカメラ回転）
     function animate() {
       requestAnimationFrame(animate);
+
+      // 補間係数（0.1 = 毎フレーム10%ずつ目標角度に近づける。値を小さくするとさらにぬるぬるになります）
+      const ease = 0.1;
+      
+      camera.rotation.order = 'YXZ';
+
+      // 360度をまたぐ際（0度↔360度の境目）の不自然な回転を防ぐ最小角度差の計算
+      let diffY = targetAlpha - camera.rotation.y;
+      while (diffY < -Math.PI) diffY += Math.PI * 2;
+      while (diffY > Math.PI) diffY -= Math.PI * 2;
+
+      camera.rotation.y += diffY * ease;
+      camera.rotation.x += (targetBeta - camera.rotation.x) * ease;
+      camera.rotation.z += (-targetGamma - camera.rotation.z) * ease;
+
       renderer.render(scene, camera);
     }
 
-    // 4. ジャイロセンサーとカメラの連動
+    // 5. ジャイロセンサー値の更新（ここでは目標値の保持のみ）
     function onDeviceOrientation(event) {
-      if (!event.alpha && event.alpha !== 0) return;
+      if (event.alpha === null) return;
 
-      camera.rotation.order = 'YXZ';
-      const alpha = THREE.MathUtils.degToRad(event.alpha || 0); // 方角 (0=北)
-      const beta  = THREE.MathUtils.degToRad(event.beta || 0);  // 傾き
-      const gamma = THREE.MathUtils.degToRad(event.gamma || 0);
-
-      // スマホをかざした方向と天球座標の同期
-      camera.rotation.y = alpha; 
-      camera.rotation.x = beta - Math.PI / 2;
-      camera.rotation.z = -gamma;
+      targetAlpha = THREE.MathUtils.degToRad(event.alpha || 0);
+      targetBeta  = THREE.MathUtils.degToRad(event.beta || 0) - Math.PI / 2;
+      targetGamma = THREE.MathUtils.degToRad(event.gamma || 0);
 
       sensorEl.innerText = `方位: ${Math.floor(event.alpha || 0)}° / 上下: ${Math.floor(event.beta || 0)}°`;
     }
 
-    // 5. 開始処理（GPS取得 ＋ センサー起動）
+    // 6. 開始処理（GPS取得 ＋ センサー起動）
     document.getElementById('start-btn').addEventListener('click', async () => {
       document.getElementById('overlay').style.display = 'none';
 
-      // 現在地 (GPS) の取得
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           (pos) => {
@@ -201,7 +206,6 @@
         animate();
       }
 
-      // iOSのジャイロセンサー許可
       if (typeof DeviceOrientationEvent.requestPermission === 'function') {
         try {
           const state = await DeviceOrientationEvent.requestPermission();
