@@ -90,7 +90,7 @@
 
   <div id="info">
     <div id="location-info">観測地: 東京</div>
-    <div id="sensor-info">モード: センサー連動中</div>
+    <div id="sensor-info">モード: センサー連動中 (コンパス同期中)</div>
   </div>
 
   <button id="sidebar-toggle">
@@ -135,6 +135,7 @@
 
   <script>
     let scene, camera, renderer, starMesh, orbitControls, deviceControls;
+    let worldGroup = new THREE.Group(); // コンパス回転補正用の親グループ
     let userLat = 35.6812, userLon = 139.7671;
     let cityName = "東京";
     const locationEl = document.getElementById('location-info');
@@ -147,6 +148,10 @@
     let solarSystemGroup = new THREE.Group();
     let constellationGroup = new THREE.Group();
     let lastCalcTime = 0;
+    
+    // コンパス補正用変数
+    let alphaOffset = 0;
+    let hasCalibratedCompass = false;
 
     const cities = [
       { name: "東京", lat: 35.6812, lon: 139.7671 },
@@ -165,10 +170,8 @@
 
     function createStarTexture() {
       const canvas = document.createElement('canvas');
-      canvas.width = 128;
-      canvas.height = 128;
+      canvas.width = 128; canvas.height = 128;
       const ctx = canvas.getContext('2d');
-
       ctx.clearRect(0, 0, 128, 128);
 
       const coreGrad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
@@ -180,13 +183,10 @@
       coreGrad.addColorStop(1.0, 'rgba(255,255,255,0.0)');
 
       ctx.fillStyle = coreGrad;
-      ctx.beginPath();
-      ctx.arc(64, 64, 64, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.beginPath(); ctx.arc(64, 64, 64, 0, Math.PI * 2); ctx.fill();
 
       ctx.strokeStyle = 'rgba(255,255,255,0.6)';
       ctx.lineWidth = 1.8;
-      
       ctx.beginPath();
       ctx.moveTo(64, 16); ctx.lineTo(64, 112);
       ctx.moveTo(16, 64); ctx.lineTo(112, 64);
@@ -217,12 +217,7 @@
           else if (bv < 1.2) color.setHex(0xffdd85);
           else color.setHex(0xffa050);
 
-          return {
-            ra: coords[0] / 15,
-            dec: coords[1],
-            mag: mag,
-            color: color
-          };
+          return { ra: coords[0] / 15, dec: coords[1], mag: mag, color: color };
         });
 
         constellationLinesData = constData.features;
@@ -256,9 +251,7 @@
       return new THREE.Vector3(x, y, z);
     }
 
-    function rev(deg) {
-      return deg - Math.floor(deg / 360.0) * 360.0;
-    }
+    function rev(deg) { return deg - Math.floor(deg / 360.0) * 360.0; }
 
     function getSolarSystemPositions(date) {
       const d = (date.getTime() / 86400000) - 10957.5;
@@ -327,21 +320,13 @@
       ];
 
       planetsData.forEach(p => {
-        const N = rev(p.N);
-        const i = p.i;
-        const w = rev(p.w);
-        const a = p.a;
-        const e = p.e;
-        const M = rev(p.M);
-
+        const N = rev(p.N), i = p.i, w = rev(p.w), a = p.a, e = p.e, M = rev(p.M);
         let E = M + e * deg * Math.sin(M * rad) * (1 + e * Math.cos(M * rad));
         for (let k = 0; k < 3; k++) {
           E = E - (E - e * deg * Math.sin(E * rad) - M) / (1 - e * Math.cos(E * rad));
         }
-
         const xv = a * (Math.cos(E * rad) - e);
         const yv = a * Math.sqrt(1.0 - e * e) * Math.sin(E * rad);
-
         const v = Math.atan2(yv, xv) * deg;
         const r = Math.sqrt(xv * xv + yv * yv);
 
@@ -349,24 +334,13 @@
         const yh = r * (Math.sin(N * rad) * Math.cos((v + w) * rad) + Math.cos(N * rad) * Math.sin((v + w) * rad) * Math.cos(i * rad));
         const zh = r * (Math.sin((v + w) * rad) * Math.sin(i * rad));
 
-        const xg = xh + xs;
-        const yg = yh + ys;
-        const zg = zh;
-
-        const xe = xg;
-        const ye = yg * Math.cos(eclRad) - zg * Math.sin(eclRad);
-        const ze = yg * Math.sin(eclRad) + zg * Math.cos(eclRad);
+        const xg = xh + xs, yg = yh + ys, zg = zh;
+        const xe = xg, ye = yg * Math.cos(eclRad) - zg * Math.sin(eclRad), ze = yg * Math.sin(eclRad) + zg * Math.cos(eclRad);
 
         const ra = rev(Math.atan2(ye, xe) * deg) / 15;
         const dec = Math.atan2(ze, Math.sqrt(xe * xe + ye * ye)) * deg;
 
-        bodies.push({
-          name: p.name,
-          ra: ra,
-          dec: dec,
-          color: p.color,
-          mag: p.mag
-        });
+        bodies.push({ name: p.name, ra: ra, dec: dec, color: p.color, mag: p.mag });
       });
 
       return bodies;
@@ -374,10 +348,8 @@
 
     function createGlowTexture(colorHex) {
       const canvas = document.createElement('canvas');
-      canvas.width = 128;
-      canvas.height = 128;
+      canvas.width = 128; canvas.height = 128;
       const ctx = canvas.getContext('2d');
-
       const gradient = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
       gradient.addColorStop(0.0, '#ffffff');
       gradient.addColorStop(0.2, colorHex);
@@ -385,35 +357,26 @@
       gradient.addColorStop(1.0, 'rgba(0,0,0,0)');
 
       ctx.fillStyle = gradient;
-      ctx.beginPath();
-      ctx.arc(64, 64, 64, 0, Math.PI * 2);
-      ctx.fill();
-
+      ctx.beginPath(); ctx.arc(64, 64, 64, 0, Math.PI * 2); ctx.fill();
       return new THREE.CanvasTexture(canvas);
     }
 
     function createTextSprite(text, colorCss) {
       const canvas = document.createElement('canvas');
-      canvas.width = 256;
-      canvas.height = 128;
+      canvas.width = 256; canvas.height = 128;
       const ctx = canvas.getContext('2d');
 
       ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
       if (ctx.roundRect) {
-        ctx.beginPath();
-        ctx.roundRect(16, 24, 224, 80, 16);
-        ctx.fill();
-        ctx.strokeStyle = colorCss;
-        ctx.lineWidth = 3;
-        ctx.stroke();
+        ctx.beginPath(); ctx.roundRect(16, 24, 224, 80, 16); ctx.fill();
+        ctx.strokeStyle = colorCss; ctx.lineWidth = 3; ctx.stroke();
       } else {
         ctx.fillRect(16, 24, 224, 80);
       }
 
       ctx.font = 'Bold 40px sans-serif';
       ctx.fillStyle = colorCss;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(text, 128, 64);
 
       const texture = new THREE.CanvasTexture(canvas);
@@ -433,6 +396,9 @@
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 3));
       document.body.appendChild(renderer.domElement);
 
+      // 全天体を保持するワールドグループをシーンに追加
+      scene.add(worldGroup);
+
       orbitControls = new THREE.OrbitControls(camera, renderer.domElement);
       orbitControls.enableZoom = false;
       orbitControls.enablePan = false;
@@ -442,8 +408,8 @@
       deviceControls = new THREE.DeviceOrientationControls(camera);
       deviceControls.enabled = true;
 
-      scene.add(solarSystemGroup);
-      scene.add(constellationGroup);
+      worldGroup.add(solarSystemGroup);
+      worldGroup.add(constellationGroup);
 
       loadRealStarCatalog();
 
@@ -452,16 +418,45 @@
         camera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth, window.innerHeight);
       });
+
+      setupCompassCalibration();
+    }
+
+    // デジタルコンパス（磁北）を取得して、東西南北をワールド回転に加算補正する
+    function setupCompassCalibration() {
+      const handleOrientation = (event) => {
+        if (isManualMode || hasCalibratedCompass) return;
+
+        let compassHeading = null;
+
+        if (event.webkitCompassHeading !== undefined) {
+          // iOS Safari向けコンパス情報
+          compassHeading = event.webkitCompassHeading;
+        } else if (event.absolute && event.alpha !== null) {
+          // Android Chrome向け絶対方位情報
+          compassHeading = (360 - event.alpha) % 360;
+        }
+
+        if (compassHeading !== null) {
+          // コンパスの角度と、現在のDeviceOrientationControlsのジャイロ基準差分を計算
+          const headingRad = compassHeading * (Math.PI / 180);
+          worldGroup.rotation.y = -headingRad;
+          hasCalibratedCompass = true; // キャリブレーション完了
+        }
+      };
+
+      if ('ondeviceorientationabsolute' in window) {
+        window.addEventListener('deviceorientationabsolute', handleOrientation, true);
+      }
+      window.addEventListener('deviceorientation', handleOrientation, true);
     }
 
     function buildRealStarField() {
       if (!realStarsData.length) return;
-      if (starMesh) scene.remove(starMesh);
+      if (starMesh) worldGroup.remove(starMesh);
 
       const geometry = new THREE.BufferGeometry();
-      const positions = [];
-      const colors = [];
-      const sizes = [];
+      const positions = [], colors = [], sizes = [];
       const now = new Date();
       const radius = 100;
 
@@ -475,7 +470,6 @@
 
         const normMag = Math.max(-1.5, Math.min(6.5, star.mag));
         const magRatio = 1.0 - (normMag + 1.5) / 8.0;
-
         const pSize = 1.8 + Math.pow(magRatio, 2.2) * 11.2;
         sizes.push(pSize);
       });
@@ -485,9 +479,7 @@
       geometry.setAttribute('aSize', new THREE.Float32BufferAttribute(sizes, 1));
 
       const shaderMaterial = new THREE.ShaderMaterial({
-        uniforms: {
-          pointTexture: { value: createStarTexture() }
-        },
+        uniforms: { pointTexture: { value: createStarTexture() } },
         vertexShader: `
           attribute float aSize;
           varying vec3 vColor;
@@ -513,7 +505,7 @@
       });
       
       starMesh = new THREE.Points(geometry, shaderMaterial);
-      scene.add(starMesh);
+      worldGroup.add(starMesh);
 
       buildSolarSystem(now);
       buildConstellations(now);
@@ -529,9 +521,7 @@
 
       const radius = 99;
       const lineMaterial = new THREE.LineBasicMaterial({
-        color: 0x3a7bd5,
-        transparent: true,
-        opacity: 0.25
+        color: 0x3a7bd5, transparent: true, opacity: 0.25
       });
 
       constellationLinesData.forEach(feature => {
@@ -539,8 +529,7 @@
         lines.forEach(line => {
           const points = [];
           line.forEach(pt => {
-            const ra = pt[0] / 15;
-            const dec = pt[1];
+            const ra = pt[0] / 15, dec = pt[1];
             const pos = raDecToAltAz(ra, dec, userLat, userLon, now);
             const vec = altAzToVector3(pos.alt, pos.az, radius);
             points.push(vec);
@@ -572,9 +561,7 @@
 
         const glowTexture = createGlowTexture(body.color);
         const spriteMat = new THREE.SpriteMaterial({
-          map: glowTexture,
-          transparent: true,
-          blending: THREE.AdditiveBlending
+          map: glowTexture, transparent: true, blending: THREE.AdditiveBlending
         });
         const sprite = new THREE.Sprite(spriteMat);
         sprite.position.copy(vec);
@@ -631,7 +618,14 @@
       isManualMode = e.target.checked;
       orbitControls.enabled = isManualMode;
       deviceControls.enabled = !isManualMode;
-      sensorEl.innerText = isManualMode ? "モード: 手動ドラッグ" : "モード: センサー連動";
+      
+      if (isManualMode) {
+        worldGroup.rotation.y = 0; // 手動時は補正解除
+        sensorEl.innerText = "モード: 手動ドラッグ";
+      } else {
+        hasCalibratedCompass = false; // 自動モード復帰時に再同期
+        sensorEl.innerText = "モード: センサー連動中 (コンパス同期中)";
+      }
     });
 
     constellationToggle.addEventListener('change', (e) => {
@@ -665,9 +659,9 @@
       });
     }
 
-    // バックグラウンドからタブに復帰した際の復旧処理を追加
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) {
+        hasCalibratedCompass = false; // 復帰時にコンパス再同期
         if (!isManualMode && deviceControls) {
           deviceControls.disconnect();
           deviceControls.connect();
@@ -689,6 +683,7 @@
             const state = await DeviceOrientationEvent.requestPermission();
             if (state === 'granted') {
               deviceControls.connect();
+              hasCalibratedCompass = false;
             }
           } catch (e) {}
         }, { once: true });
