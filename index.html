@@ -119,6 +119,7 @@
     let solarSystemGroup = new THREE.Group();
 
     const targetQuaternion = new THREE.Quaternion();
+    const currentQuaternion = new THREE.Quaternion();
     const zee = new THREE.Vector3(0, 0, 1);
     const euler = new THREE.Euler();
     const q0 = new THREE.Quaternion();
@@ -198,7 +199,6 @@
       const ecl = 23.4393 - 3.563E-7 * d;
       const eclRad = ecl * rad;
 
-      // 太陽の計算
       const w_sun = 282.9404 + 4.70935E-5 * d;
       const e_sun = 0.016709 - 1.151E-9 * d;
       const M_sun = rev(356.0470 + 0.9856002585 * d);
@@ -212,7 +212,6 @@
       const xs = r_sun * Math.cos(lon_sun * rad);
       const ys = r_sun * Math.sin(lon_sun * rad);
 
-      // 月の計算
       const N_moon = rev(125.1228 - 0.0529538083 * d);
       const i_moon = 5.1454;
       const w_moon = rev(318.0634 + 0.1643573223 * d);
@@ -237,7 +236,6 @@
       const moonRa = rev(Math.atan2(moon_ye, moon_xe) * deg) / 15;
       const moonDec = Math.atan2(moon_ze, Math.sqrt(moon_xe * moon_xe + moon_ye * moon_ye)) * deg;
 
-      // 太陽の赤経・赤緯
       const sun_xe = xs;
       const sun_ye = ys * Math.cos(eclRad);
       const sun_ze = ys * Math.sin(eclRad);
@@ -249,7 +247,6 @@
         { name: "月",   ra: moonRa, dec: moonDec, color: "#ffffff", size: 4.5 }
       ];
 
-      // 各惑星の軌道要素 (Paul Schlyter)
       const planetsData = [
         { name: "水星", N: 48.3313 + 3.24587E-5*d, i: 7.0047 + 5.00E-8*d, w: 29.1241 + 1.01444E-5*d, a: 0.387098, e: 0.205635 + 5.59E-10*d, M: 168.6562 + 4.0923344368*d, color: "#b5a7a7", size: 2.2 },
         { name: "金星", N: 76.6799 + 2.46590E-5*d, i: 3.3946 + 2.75E-8*d, w: 54.8910 + 1.38374E-5*d, a: 0.723330, e: 0.006773 - 1.302E-9*d, M: 48.0052 + 1.6021302244*d, color: "#ffd700", size: 3.5 },
@@ -283,12 +280,10 @@
         const yh = r * (Math.sin(N * rad) * Math.cos((v + w) * rad) + Math.cos(N * rad) * Math.sin((v + w) * rad) * Math.cos(i * rad));
         const zh = r * (Math.sin((v + w) * rad) * Math.sin(i * rad));
 
-        // 地心座標変換
         const xg = xh + xs;
         const yg = yh + ys;
         const zg = zh;
 
-        // 赤道座標変換
         const xe = xg;
         const ye = yg * Math.cos(eclRad) - zg * Math.sin(eclRad);
         const ze = yg * Math.sin(eclRad) + zg * Math.cos(eclRad);
@@ -346,7 +341,7 @@
 
       renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.setPixelRatio(window.devicePixelRatio);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       document.body.appendChild(renderer.domElement);
 
       controls = new THREE.OrbitControls(camera, renderer.domElement);
@@ -439,7 +434,7 @@
       if (isManualMode) {
         controls.update();
       } else {
-        camera.quaternion.slerp(targetQuaternion, 0.1);
+        camera.quaternion.slerp(targetQuaternion, 0.2);
       }
       renderer.render(scene, camera);
     }
