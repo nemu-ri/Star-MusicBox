@@ -90,7 +90,7 @@
 
   <div id="info">
     <div id="location-info">観測地: 東京</div>
-    <div id="sensor-info">モード: タップしてセンサー同期</div>
+    <div id="sensor-info">モード: 画面タップでセンサー起動</div>
   </div>
 
   <button id="sidebar-toggle">
@@ -131,10 +131,9 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/DeviceOrientationControls.js"></script>
 
   <script>
-    let scene, camera, renderer, starMesh, orbitControls, deviceControls;
+    let scene, camera, renderer, starMesh, orbitControls;
     let userLat = 35.6812, userLon = 139.7671;
     let cityName = "東京";
     const locationEl = document.getElementById('location-info');
@@ -148,6 +147,10 @@
     let constellationGroup = new THREE.Group();
     let lastCalcTime = 0;
     let isCompassSynced = false;
+
+    // 姿勢同期用の変数
+    let deviceAlpha = 0, deviceBeta = 0, deviceGamma = 0;
+    let screenOrientation = window.orientation || 0;
 
     const cities = [
       { name: "東京", lat: 35.6812, lon: 139.7671 },
@@ -241,9 +244,9 @@
     }
 
     function altAzToVector3(alt, az, radius) {
-      const x = radius * Math.cos(alt) * Math.sin(az);  // 東
-      const y = radius * Math.sin(alt);                  // 天頂
-      const z = -radius * Math.cos(alt) * Math.cos(az); // 北
+      const x = radius * Math.cos(alt) * Math.sin(az);  // 東 = +X
+      const y = radius * Math.sin(alt);                  // 天頂 = +Y
+      const z = -radius * Math.cos(alt) * Math.cos(az); // 北 = -Z
       return new THREE.Vector3(x, y, z);
     }
 
@@ -386,7 +389,7 @@
     function initThree() {
       scene = new THREE.Scene();
       camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-      camera.position.set(0, 0, 0.1);
+      camera.position.set(0, 0, 0);
 
       renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setSize(window.innerWidth, window.innerHeight);
@@ -399,9 +402,6 @@
       orbitControls.rotateSpeed = -0.5;
       orbitControls.enabled = false;
 
-      deviceControls = new THREE.DeviceOrientationControls(camera);
-      deviceControls.enabled = true;
-
       scene.add(solarSystemGroup);
       scene.add(constellationGroup);
 
@@ -413,25 +413,36 @@
         camera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth, window.innerHeight);
       });
+
+      window.addEventListener('orientationchange', () => {
+        screenOrientation = window.orientation || 0;
+      });
     }
 
-    // 方角（コンパス）のイベントリスナー設定
+    // 独自センサー同期 (コンパス + ジャイロの絶対姿勢算出)
     function setupSensorSync() {
       const handleOrientation = (e) => {
-        let heading = null;
+        if (isManualMode) return;
+
+        let alpha = e.alpha || 0;
+        let beta = e.beta || 0;
+        let gamma = e.gamma || 0;
+
         if (e.webkitCompassHeading !== undefined && e.webkitCompassHeading !== null) {
-          heading = e.webkitCompassHeading; // iOS
-        } else if (e.alpha !== null) {
-          heading = (360 - e.alpha) % 360; // Android
+          // iOS: 真北(0deg) からの絶対コンパス方位を取得
+          alpha = 360 - e.webkitCompassHeading;
+        } else if (e.absolute && e.alpha !== null) {
+          // Android: 絶対方位対応
+          alpha = e.alpha;
         }
 
-        if (heading !== null && !isManualMode) {
-          // コンパスの方角に合わせて3D空間全体をY軸回転させる
-          scene.rotation.y = -heading * (Math.PI / 180);
-          if (!isCompassSynced) {
-            isCompassSynced = true;
-            sensorEl.innerText = "モード: センサー連動中（同期完了）";
-          }
+        deviceAlpha = alpha;
+        deviceBeta = beta;
+        deviceGamma = gamma;
+
+        if (!isCompassSynced && (e.webkitCompassHeading !== undefined || e.absolute)) {
+          isCompassSynced = true;
+          sensorEl.innerText = "モード: リアルタイム絶対方位同期中";
         }
       };
 
@@ -439,11 +450,31 @@
       window.addEventListener('deviceorientation', handleOrientation, true);
     }
 
+    // カメラの姿勢をコンパス角から更新
+    const zee = new THREE.Vector3(0, 0, 1);
+    const euler = new THREE.Euler();
+    const q0 = new THREE.Quaternion();
+    const q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5)); // -90 deg X
+
+    function updateCameraOrientation() {
+      if (isManualMode) return;
+
+      const alphaRad = deviceAlpha * (Math.PI / 180);
+      const betaRad = deviceBeta * (Math.PI / 180);
+      const gammaRad = deviceGamma * (Math.PI / 180);
+      const orientRad = screenOrientation * (Math.PI / 180);
+
+      euler.set(betaRad, alphaRad, -gammaRad, 'YXZ');
+      camera.quaternion.setFromEuler(euler);
+      camera.quaternion.multiply(q1);
+      camera.quaternion.multiply(q0.setFromAxisAngle(zee, -orientRad));
+    }
+
     function requestSensorPermission() {
       if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
         DeviceOrientationEvent.requestPermission().then(state => {
           if (state === 'granted') {
-            deviceControls.connect();
+            sensorEl.innerText = "モード: センサー連動中";
           }
         }).catch(() => {});
       }
@@ -565,7 +596,7 @@
       if (isManualMode) {
         orbitControls.update();
       } else {
-        deviceControls.update();
+        updateCameraOrientation();
       }
 
       renderer.render(scene, camera);
@@ -595,9 +626,8 @@
     manualToggle.addEventListener('change', (e) => {
       isManualMode = e.target.checked;
       orbitControls.enabled = isManualMode;
-      deviceControls.enabled = !isManualMode;
       if (isManualMode) {
-        scene.rotation.y = 0; // 手動時はシーン回転を初期化
+        camera.quaternion.set(0, 0, 0, 1);
         sensorEl.innerText = "モード: 手動ドラッグ";
       } else {
         sensorEl.innerText = "モード: センサー連動中";
@@ -639,7 +669,6 @@
       requestAnimationFrame(animate);
       renderCityList();
 
-      // 初回画面タップ時にセンサー許可をリクエスト
       window.addEventListener('click', () => {
         requestSensorPermission();
       }, { once: true });
