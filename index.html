@@ -90,7 +90,7 @@
 
   <div id="info">
     <div id="location-info">観測地: 東京</div>
-    <div id="sensor-info">モード: センサー連動中 (コンパス同期中)</div>
+    <div id="sensor-info">モード: コンパスリアルタイム同期中</div>
   </div>
 
   <button id="sidebar-toggle">
@@ -135,7 +135,7 @@
 
   <script>
     let scene, camera, renderer, starMesh, orbitControls, deviceControls;
-    let worldGroup = new THREE.Group(); // コンパス回転補正用の親グループ
+    let worldGroup = new THREE.Group();
     let userLat = 35.6812, userLon = 139.7671;
     let cityName = "東京";
     const locationEl = document.getElementById('location-info');
@@ -149,9 +149,7 @@
     let constellationGroup = new THREE.Group();
     let lastCalcTime = 0;
     
-    // コンパス補正用変数
-    let alphaOffset = 0;
-    let hasCalibratedCompass = false;
+    let targetCompassHeading = null;
 
     const cities = [
       { name: "東京", lat: 35.6812, lon: 139.7671 },
@@ -396,7 +394,6 @@
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 3));
       document.body.appendChild(renderer.domElement);
 
-      // 全天体を保持するワールドグループをシーンに追加
       scene.add(worldGroup);
 
       orbitControls = new THREE.OrbitControls(camera, renderer.domElement);
@@ -419,29 +416,23 @@
         renderer.setSize(window.innerWidth, window.innerHeight);
       });
 
-      setupCompassCalibration();
+      setupContinuousCompass();
     }
 
-    // デジタルコンパス（磁北）を取得して、東西南北をワールド回転に加算補正する
-    function setupCompassCalibration() {
+    // どの向きで開いても常にコンパス方位をリアルタイムで追従補正する
+    function setupContinuousCompass() {
       const handleOrientation = (event) => {
-        if (isManualMode || hasCalibratedCompass) return;
+        if (isManualMode) return;
 
         let compassHeading = null;
-
         if (event.webkitCompassHeading !== undefined) {
-          // iOS Safari向けコンパス情報
-          compassHeading = event.webkitCompassHeading;
+          compassHeading = event.webkitCompassHeading; // iOS
         } else if (event.absolute && event.alpha !== null) {
-          // Android Chrome向け絶対方位情報
-          compassHeading = (360 - event.alpha) % 360;
+          compassHeading = (360 - event.alpha) % 360; // Android
         }
 
         if (compassHeading !== null) {
-          // コンパスの角度と、現在のDeviceOrientationControlsのジャイロ基準差分を計算
-          const headingRad = compassHeading * (Math.PI / 180);
-          worldGroup.rotation.y = -headingRad;
-          hasCalibratedCompass = true; // キャリブレーション完了
+          targetCompassHeading = compassHeading * (Math.PI / 180);
         }
       };
 
@@ -588,6 +579,17 @@
         orbitControls.update();
       } else {
         deviceControls.update();
+
+        // コンパスの値が取れている場合、ワールドグループのY軸回転を滑らかに同期補正する
+        if (targetCompassHeading !== null) {
+          // 画面中央の向き（カメラの向き）とコンパスのズレを計算して吸収する
+          let currentY = worldGroup.rotation.y;
+          // 最短経路で滑らかに補間 (LERP)
+          let diff = targetCompassHeading - currentY;
+          while (diff < -Math.PI) diff += Math.PI * 2;
+          while (diff > Math.PI) diff -= Math.PI * 2;
+          worldGroup.rotation.y += diff * 0.1; // 追従の滑らかさ
+        }
       }
 
       renderer.render(scene, camera);
@@ -620,11 +622,9 @@
       deviceControls.enabled = !isManualMode;
       
       if (isManualMode) {
-        worldGroup.rotation.y = 0; // 手動時は補正解除
         sensorEl.innerText = "モード: 手動ドラッグ";
       } else {
-        hasCalibratedCompass = false; // 自動モード復帰時に再同期
-        sensorEl.innerText = "モード: センサー連動中 (コンパス同期中)";
+        sensorEl.innerText = "モード: コンパスリアルタイム同期中";
       }
     });
 
@@ -661,7 +661,6 @@
 
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) {
-        hasCalibratedCompass = false; // 復帰時にコンパス再同期
         if (!isManualMode && deviceControls) {
           deviceControls.disconnect();
           deviceControls.connect();
@@ -683,7 +682,6 @@
             const state = await DeviceOrientationEvent.requestPermission();
             if (state === 'granted') {
               deviceControls.connect();
-              hasCalibratedCompass = false;
             }
           } catch (e) {}
         }, { once: true });
