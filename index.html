@@ -118,8 +118,8 @@
     let realStarsData = [];
     let solarSystemGroup = new THREE.Group();
 
+    // センサー補完用変数（行列経由に変更）
     const targetQuaternion = new THREE.Quaternion();
-    const currentQuaternion = new THREE.Quaternion();
     const zee = new THREE.Vector3(0, 0, 1);
     const euler = new THREE.Euler();
     const q0 = new THREE.Quaternion();
@@ -434,29 +434,43 @@
       if (isManualMode) {
         controls.update();
       } else {
-        camera.quaternion.slerp(targetQuaternion, 0.2);
+        // 補完係数を 0.15 に落として超滑らかに追従させる
+        camera.quaternion.slerp(targetQuaternion, 0.15);
       }
       renderer.render(scene, camera);
     }
 
+    // ジンバルロックを防ぐ標準デバイス回転計算関数
+    const setObjectQuaternion = (function() {
+      const m = new THREE.Matrix4();
+      const eulerTemp = new THREE.Euler();
+
+      return function(quaternion, alpha, beta, gamma, orient) {
+        // 回転順序を 'YXZ' に固定し行列を作成
+        eulerTemp.set(beta, alpha, -gamma, 'YXZ');
+        m.makeRotationFromEuler(eulerTemp);
+
+        // カメラ座標系への調整
+        quaternion.setFromRotationMatrix(m);
+        quaternion.multiply(q1);
+        q0.setFromAxisAngle(zee, -orient);
+        quaternion.multiply(q0);
+      };
+    })();
+
     function onDeviceOrientation(event) {
       if (isManualMode) return;
 
-      let alpha = event.alpha || 0;
+      let alpha = event.alpha ? THREE.MathUtils.degToRad(event.alpha) : 0;
+      let beta = event.beta ? THREE.MathUtils.degToRad(event.beta) : 0;
+      let gamma = event.gamma ? THREE.MathUtils.degToRad(event.gamma) : 0;
+      let orient = window.orientation ? THREE.MathUtils.degToRad(window.orientation) : 0;
+
       if (event.webkitCompassHeading !== undefined) {
-        alpha = 360 - event.webkitCompassHeading;
+        alpha = THREE.MathUtils.degToRad(360 - event.webkitCompassHeading);
       }
 
-      const alphaRad = THREE.MathUtils.degToRad(alpha);
-      const betaRad  = THREE.MathUtils.degToRad(event.beta || 0);
-      const gammaRad = THREE.MathUtils.degToRad(event.gamma || 0);
-      const orient   = THREE.MathUtils.degToRad(window.orientation || 0);
-
-      euler.set(betaRad, alphaRad, -gammaRad, 'YXZ');
-      targetQuaternion.setFromEuler(euler);
-      targetQuaternion.multiply(q1);
-      q0.setFromAxisAngle(zee, -orient);
-      targetQuaternion.multiply(q0);
+      setObjectQuaternion(targetQuaternion, alpha, beta, gamma, orient);
     }
 
     const sidebar = document.getElementById('sidebar');
