@@ -148,7 +148,6 @@
     let constellationGroup = new THREE.Group();
     let lastCalcTime = 0;
 
-    // GPSオプションを削除し、都市リストのみに変更
     const cities = [
       { name: "東京", lat: 35.6812, lon: 139.7671 },
       { name: "札幌", lat: 43.0618, lon: 141.3545 },
@@ -233,7 +232,6 @@
       }
     }
 
-    // 地平座標（高度alt, 方位角az）の正確な計算
     function raDecToAltAz(raHours, decDeg, latDeg, lonDeg, date) {
       const dec = decDeg * (Math.PI / 180);
       const lat = latDeg * (Math.PI / 180);
@@ -251,11 +249,10 @@
       return { alt: alt, az: az };
     }
 
-    // 角度からThree.jsの3D空間座標（X:東, Y:天頂, Z:南）へ正しく変換
     function altAzToVector3(alt, az, radius) {
-      const x = radius * Math.cos(alt) * Math.sin(az);  // 東
-      const y = radius * Math.sin(alt);                  // 天頂
-      const z = -radius * Math.cos(alt) * Math.cos(az); // 北
+      const x = radius * Math.cos(alt) * Math.sin(az);
+      const y = radius * Math.sin(alt);
+      const z = -radius * Math.cos(alt) * Math.cos(az);
       return new THREE.Vector3(x, y, z);
     }
 
@@ -593,7 +590,6 @@
     function animate(nowTime) {
       requestAnimationFrame(animate);
 
-      // 10秒ごとにリアルタイムで星・天体の位置を再計算して時間のズレを防止
       if (nowTime - lastCalcTime > 10000) {
         if (realStarsData.length > 0) {
           buildRealStarField();
@@ -668,6 +664,19 @@
         cityListEl.appendChild(item);
       });
     }
+
+    // バックグラウンドからタブに復帰した際の復旧処理を追加
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        if (!isManualMode && deviceControls) {
+          deviceControls.disconnect();
+          deviceControls.connect();
+        }
+        if (realStarsData.length > 0) {
+          buildRealStarField();
+        }
+      }
+    });
 
     window.addEventListener('DOMContentLoaded', () => {
       initThree();
