@@ -24,7 +24,6 @@
       cursor: pointer; display: flex; justify-content: center; align-items: center;
     }
 
-    /* サイドバー初期状態は完全に非表示（display: none）にして画面領域から除外 */
     #sidebar {
       position: absolute; top: 0; right: 0; width: 300px; height: 100%;
       background: rgba(10, 15, 30, 0.92); backdrop-filter: blur(12px);
@@ -35,7 +34,6 @@
       transition: opacity 0.25s ease, transform 0.25s ease;
       flex-direction: column; overflow-y: auto;
     }
-    /* 開いた時だけ表示 */
     #sidebar.open {
       display: flex;
       opacity: 1;
@@ -165,7 +163,6 @@
       { name: "ホノルル", lat: 21.3069, lon: -157.8583 }
     ];
 
-    // 星のテクスチャを高解像度化（128x128）し、芯の輪郭と輝き（グロー）をくっきり調整
     function createStarTexture() {
       const canvas = document.createElement('canvas');
       canvas.width = 128;
@@ -173,10 +170,10 @@
       const ctx = canvas.getContext('2d');
 
       const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
-      grad.addColorStop(0.0, 'rgba(255,255,255,1.0)');  // 中心の明るい白
-      grad.addColorStop(0.15, 'rgba(255,255,255,0.9)'); // 芯のクリアな輪郭
-      grad.addColorStop(0.35, 'rgba(255,255,255,0.4)'); // 輪郭周囲の光彩
-      grad.addColorStop(0.7, 'rgba(255,255,255,0.08)'); // 柔らかい減衰
+      grad.addColorStop(0.0, 'rgba(255,255,255,1.0)');
+      grad.addColorStop(0.12, 'rgba(255,255,255,0.95)');
+      grad.addColorStop(0.3, 'rgba(255,255,255,0.5)');
+      grad.addColorStop(0.65, 'rgba(255,255,255,0.12)');
       grad.addColorStop(1.0, 'rgba(255,255,255,0.0)');
 
       ctx.fillStyle = grad;
@@ -413,7 +410,6 @@
 
       renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setSize(window.innerWidth, window.innerHeight);
-      // 高解像度ディスプレイ（Retinaなど）でぼやけないようDevicePixelRatioを設定
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 3));
       document.body.appendChild(renderer.domElement);
 
@@ -458,14 +454,16 @@
         positions.push(x, y, z);
 
         const normMag = Math.max(-1.5, Math.min(6.5, star.mag));
-        const magRatio = 1.0 - (normMag + 1.5) / 8.0;
+        const magRatio = 1.0 - (normMag + 1.5) / 8.0; // 1.0 (シリウス等) 〜 0.0 (6等星)
 
-        const brightness = Math.max(0.2, Math.pow(magRatio, 1.6));
+        // 澄んだ夜空のリアルな明暗差補正:
+        // 明るい星（1.5〜2.0倍の輝度で眩しく表現）、暗い星（0.08の下限で微細な粒子として表現）
+        const brightness = Math.max(0.08, Math.pow(magRatio, 1.4) * 2.2);
         const c = star.color;
         colors.push(c.r * brightness, c.g * brightness, c.b * brightness);
 
-        // サイズ定義（解像度に合わせて2.0px 〜 16.0px へ拡張）
-        const pSize = 2.0 + Math.pow(magRatio, 2.0) * 14.0;
+        // 描画サイズ補正 (1.2px 〜 18.0px)
+        const pSize = 1.2 + Math.pow(magRatio, 2.4) * 16.8;
         sizes.push(pSize);
       });
 
@@ -473,6 +471,7 @@
       geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
       geometry.setAttribute('aSize', new THREE.Float32BufferAttribute(sizes, 1));
 
+      // シェーダー側で色の倍率制限を調整し、中心部のサチュレーション（眩しい発光感）を生成
       const shaderMaterial = new THREE.ShaderMaterial({
         uniforms: {
           pointTexture: { value: createStarTexture() }
@@ -483,7 +482,7 @@
           void main() {
             vColor = color;
             vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-            gl_PointSize = aSize * (250.0 / -mvPosition.z);
+            gl_PointSize = aSize * (260.0 / -mvPosition.z);
             gl_Position = projectionMatrix * mvPosition;
           }
         `,
@@ -492,6 +491,7 @@
           varying vec3 vColor;
           void main() {
             vec4 texColor = texture2D(pointTexture, gl_PointCoord);
+            // vColorが1.0を超えてもAdditiveBlendingにより美しい白飛び発光層を構成
             gl_FragColor = vec4(vColor, 1.0) * texColor;
           }
         `,
@@ -520,7 +520,7 @@
       const lineMaterial = new THREE.LineBasicMaterial({
         color: 0x3a7bd5,
         transparent: true,
-        opacity: 0.35
+        opacity: 0.25
       });
 
       constellationLinesData.forEach(feature => {
@@ -603,7 +603,6 @@
     const cityAccordionContent = document.getElementById('city-accordion-content');
     const accordionArrow = document.getElementById('accordion-arrow');
 
-    // サイドバー切り替え時の非表示アニメーション制御
     sidebarToggle.addEventListener('click', () => {
       const isOpening = !sidebar.classList.contains('open');
       if (isOpening) {
