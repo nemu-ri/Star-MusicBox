@@ -450,24 +450,31 @@
       window.addEventListener('deviceorientation', handleOrientation, true);
     }
 
-    // カメラの姿勢をコンパス角から更新
+    // カメラの姿勢更新（クランプ制限 ＋ slerp補間による反転・跳ね防止）
     const zee = new THREE.Vector3(0, 0, 1);
     const euler = new THREE.Euler();
     const q0 = new THREE.Quaternion();
     const q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5)); // -90 deg X
+    const targetQuaternion = new THREE.Quaternion();
 
     function updateCameraOrientation() {
       if (isManualMode) return;
 
+      // 1. 真上(90°)・真下(-90°)の手前で角度を制限し、センサー内部の反転ジャンプ（特異点）を防止
+      const safeBeta = Math.max(-88.5, Math.min(88.5, deviceBeta));
+
       const alphaRad = deviceAlpha * (Math.PI / 180);
-      const betaRad = deviceBeta * (Math.PI / 180);
+      const betaRad = safeBeta * (Math.PI / 180);
       const gammaRad = deviceGamma * (Math.PI / 180);
       const orientRad = screenOrientation * (Math.PI / 180);
 
       euler.set(betaRad, alphaRad, -gammaRad, 'YXZ');
-      camera.quaternion.setFromEuler(euler);
-      camera.quaternion.multiply(q1);
-      camera.quaternion.multiply(q0.setFromAxisAngle(zee, -orientRad));
+      targetQuaternion.setFromEuler(euler);
+      targetQuaternion.multiply(q1);
+      targetQuaternion.multiply(q0.setFromAxisAngle(zee, -orientRad));
+
+      // 2. slerp（球面線形補間）で目標角度へ滑らかに追従
+      camera.quaternion.slerp(targetQuaternion, 0.1);
     }
 
     function requestSensorPermission() {
