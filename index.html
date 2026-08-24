@@ -3,10 +3,216 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>星空オルゴール</title>
+  <title>リアルタイムAR星空オルゴール</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #000; color: #fff; font-family: sans-serif; }
+    canvas { display: block; }
+    #overlay {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      display: flex; flex-direction: column; justify-content: center; align-items: center;
+      background: rgba(5, 7, 20, 0.9); z-index: 10; text-align: center; padding: 20px; box-sizing: border-box;
+    }
+    button {
+      padding: 15px 32px; font-size: 18px; cursor: pointer; background: #4a6fa5; color: white;
+      border: none; border-radius: 25px; margin-top: 20px; font-weight: bold;
+      box-shadow: 0 4px 15px rgba(74, 111, 165, 0.4);
+    }
+    #info { position: absolute; top: 10px; left: 10px; font-size: 12px; color: rgba(255,255,255,0.8); z-index: 5; line-height: 1.5; pointer-events: none; }
+  </style>
 </head>
-<body style="background: #0b0d1b; color: #fff; text-align: center; padding-top: 50px; font-family: sans-serif;">
-  <h1>✨ 星空オルゴール ✨</h1>
-  <p>GitHub Pagesの準備が完了しました！</p>
+<body>
+
+  <div id="overlay">
+    <h1>✨ リアルタイムAR星空</h1>
+    <p>位置情報とジャイロセンサーを使用して<br>「いま上空にある実際の星空」を再現します。</p>
+    <button id="start-btn">位置情報を許可してスタート</button>
+  </div>
+
+  <div id="info">
+    <div id="location-info">位置情報: 取得中...</div>
+    <div id="sensor-info">方位: --° / 上下: --°</div>
+  </div>
+
+  <!-- Three.js (3D描画) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+  <script>
+    let scene, camera, renderer, starMesh;
+    let userLat = 35.6812, userLon = 139.7671; // 初期値: 東京
+    const locationEl = document.getElementById('location-info');
+    const sensorEl = document.getElementById('sensor-info');
+
+    // 主要な明るい星のリアルデータ (名: 赤経RA[h], 赤緯Dec[deg], 等級)
+    const realBrightStars = [
+      { name: "シリウス", ra: 6.75, dec: -16.72, mag: -1.46 },
+      { name: "カノープス", ra: 6.39, dec: -52.70, mag: -0.74 },
+      { name: "ベガ (織姫星)", ra: 18.62, dec: 38.78, mag: 0.03 },
+      { name: "アルクトゥルス", ra: 14.26, dec: 19.18, mag: -0.05 },
+      { name: "カペラ", ra: 5.28, dec: 46.00, mag: 0.08 },
+      { name: "リゲル", ra: 5.24, dec: -8.20, mag: 0.13 },
+      { name: "プロキオン", ra: 7.65, dec: 5.22, mag: 0.38 },
+      { name: "ベテルギウス", ra: 5.92, dec: 7.41, mag: 0.50 },
+      { name: "アルタイル (彦星)", ra: 19.84, dec: 8.87, mag: 0.77 },
+      { name: "アルデバラン", ra: 4.60, dec: 16.51, mag: 0.85 },
+      { name: "アンタレス", ra: 16.48, dec: -26.43, mag: 0.96 },
+      { name: "スピカ", ra: 13.42, dec: -11.16, mag: 0.98 },
+      { name: "ポルックス", ra: 7.76, dec: 28.03, mag: 1.14 },
+      { name: "デネブ", ra: 20.69, dec: 45.28, mag: 1.25 },
+      { name: "レグルス", ra: 10.14, dec: 11.97, mag: 1.36 },
+      { name: "北極星 (ポラリス)", ra: 2.53, dec: 89.26, mag: 1.97 }
+    ];
+
+    // 1. 赤経・赤緯・現在地・時刻から方位角(Azimuth)と高度(Altitude)を計算する数学ロジック
+    function raDecToAltAz(raHours, decDeg, latDeg, lonDeg, date) {
+      const dec = decDeg * (Math.PI / 180);
+      const lat = latDeg * (Math.PI / 180);
+
+      // 恒星時（GST / LST）の簡易計算
+      const d = (date.getTime() / 86400000) - 10957.5;
+      const gmst = (18.697374558 + 24.06570982441908 * d) % 24;
+      const lst = (gmst + lonDeg / 15 + 24) % 24;
+      
+      const ha = (lst - raHours) * 15 * (Math.PI / 180); // 時角
+
+      // 高度 (Altitude)
+      const sinAlt = Math.sin(dec) * Math.sin(lat) + Math.cos(dec) * Math.cos(lat) * Math.cos(ha);
+      const alt = Math.asin(sinAlt);
+
+      // 方位角 (Azimuth)
+      const cosAz = (Math.sin(dec) - Math.sin(alt) * Math.sin(lat)) / (Math.cos(alt) * Math.cos(lat));
+      let az = Math.acos(Math.max(-1, Math.min(1, cosAz)));
+      if (Math.sin(ha) > 0) az = 2 * Math.PI - az;
+
+      return { alt: alt, az: az }; // ラジアンで返す
+    }
+
+    // 2. Three.js の空間構築
+    function initThree() {
+      scene = new THREE.Scene();
+      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+      camera.position.set(0, 0, 0);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(window.devicePixelRatio);
+      document.body.appendChild(renderer.domElement);
+
+      buildRealStarField();
+
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+    }
+
+    // 3. 実際の星データを3D空間の座標（天球）に変換して配置
+    function buildRealStarField() {
+      const geometry = new THREE.BufferGeometry();
+      const positions = [];
+      const colors = [];
+      const now = new Date();
+      const radius = 100;
+
+      // 有名な16の1等星＋ダミー背景星(計約800個)を生成
+      const allStars = [...realBrightStars];
+      for (let i = 0; i < 750; i++) {
+        allStars.push({
+          ra: Math.random() * 24,
+          dec: (Math.random() - 0.5) * 180,
+          mag: 2 + Math.random() * 3
+        });
+      }
+
+      allStars.forEach(star => {
+        // 方位と高度をリアルタイム計算
+        const pos = raDecToAltAz(star.ra, star.dec, userLat, userLon, now);
+        
+        // 方位角・高度から3D座標(X,Y,Z)へ変換
+        const x = radius * Math.cos(pos.alt) * Math.sin(pos.az);
+        const y = radius * Math.sin(pos.alt);
+        const z = -radius * Math.cos(pos.alt) * Math.cos(pos.az);
+
+        positions.push(x, y, z);
+
+        // 明るさ（等級）に応じた色の調整
+        const brightness = Math.max(0.2, 1 - (star.mag / 5));
+        colors.push(brightness, brightness, brightness + 0.1);
+      });
+
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+      const material = new THREE.PointsMaterial({
+        size: 1.2,
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.9
+      });
+
+      starMesh = new THREE.Points(geometry, material);
+      scene.add(starMesh);
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      renderer.render(scene, camera);
+    }
+
+    // 4. ジャイロセンサーとカメラの連動
+    function onDeviceOrientation(event) {
+      if (!event.alpha && event.alpha !== 0) return;
+
+      camera.rotation.order = 'YXZ';
+      const alpha = THREE.MathUtils.degToRad(event.alpha || 0); // 方角 (0=北)
+      const beta  = THREE.MathUtils.degToRad(event.beta || 0);  // 傾き
+      const gamma = THREE.MathUtils.degToRad(event.gamma || 0);
+
+      // スマホをかざした方向と天球座標の同期
+      camera.rotation.y = alpha; 
+      camera.rotation.x = beta - Math.PI / 2;
+      camera.rotation.z = -gamma;
+
+      sensorEl.innerText = `方位: ${Math.floor(event.alpha || 0)}° / 上下: ${Math.floor(event.beta || 0)}°`;
+    }
+
+    // 5. 開始処理（GPS取得 ＋ センサー起動）
+    document.getElementById('start-btn').addEventListener('click', async () => {
+      document.getElementById('overlay').style.display = 'none';
+
+      // 現在地 (GPS) の取得
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            userLat = pos.coords.latitude;
+            userLon = pos.coords.longitude;
+            locationEl.innerText = `現在地: 北緯${userLat.toFixed(2)}° 東経${userLon.toFixed(2)}°`;
+            initThree();
+            animate();
+          },
+          (err) => {
+            locationEl.innerText = "位置情報: 取得失敗 (デフォルト東京)";
+            initThree();
+            animate();
+          }
+        );
+      } else {
+        initThree();
+        animate();
+      }
+
+      // iOSのジャイロセンサー許可
+      if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+        try {
+          const state = await DeviceOrientationEvent.requestPermission();
+          if (state === 'granted') {
+            window.addEventListener('deviceorientation', onDeviceOrientation, false);
+          }
+        } catch (e) { console.error(e); }
+      } else {
+        window.addEventListener('deviceorientation', onDeviceOrientation, false);
+      }
+    });
+  </script>
 </body>
 </html>
