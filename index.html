@@ -582,10 +582,14 @@
         const c = star.color;
         colors.push(c.r, c.g, c.b);
 
+        // --- 等級別サイズ設計の反映 ---
+        // -1.5等 〜 6.5等の範囲にクランプして正規化 (1.0 = -1.5等, 0.0 = 6.5等)
         const normMag = Math.max(-1.5, Math.min(6.5, star.mag));
         const magRatio = 1.0 - (normMag + 1.5) / 8.0; 
 
-        const brightFactor = Math.pow(magRatio, 2.8);
+        // 2.75乗のカーブを適用することで、ご指定の各等級サイズ範囲に綺麗にフィットさせます
+        // -1.5等: 30.0px / 0等: 約19.5px / 1等: 約12.3px / 2等: 約7.2px / 3等: 約3.8px / 6.5等: 2.8px
+        const brightFactor = Math.pow(magRatio, 2.75);
 
         sizes.push(2.8 + brightFactor * 27.2);
         opacities.push(0.60 + Math.pow(magRatio, 1.5) * 0.40);
