@@ -12,7 +12,7 @@
       background: #000;
       color: #fff;
       font-family: sans-serif;
-      touch-action: none; /* ピンチズームやダブルタップ拡大を無効化 */
+      touch-action: none; /* ピンチズームやダブルタップ拡大をブラウザデフォルト挙動から保護 */
       user-select: none;   /* 不要なテキスト選択を防止 */
     }
     canvas { display: block; }
@@ -153,6 +153,10 @@
     let headingOffset = 0; 
     let isHeadingInitialized = false;
     let screenOrientation = window.orientation || 0;
+
+    // ピンチズーム制御用変数
+    let initialPinchDistance = null;
+    let initialFov = 75;
 
     const cities = [
       { name: "東京", lat: 35.6812, lon: 139.7671 },
@@ -396,7 +400,6 @@
       return sprite;
     }
 
-    // 画面サイズ更新関数（visualViewport対応）
     function updateCanvasSize() {
       const width = window.visualViewport ? window.visualViewport.width : window.innerWidth;
       const height = window.visualViewport ? window.visualViewport.height : window.innerHeight;
@@ -404,6 +407,49 @@
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
       renderer.setSize(width, height);
+    }
+
+    // ピンチズーム・マウスホイールイベントの追加
+    function setupZoomControls() {
+      const dom = renderer.domElement;
+
+      const getDistance = (e) => {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        return Math.sqrt(dx * dx + dy * dy);
+      };
+
+      dom.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 2) {
+          initialPinchDistance = getDistance(e);
+          initialFov = camera.fov;
+        }
+      }, { passive: true });
+
+      dom.addEventListener('touchmove', (e) => {
+        if (e.touches.length === 2 && initialPinchDistance !== null) {
+          const currentDistance = getDistance(e);
+          const factor = initialPinchDistance / currentDistance;
+          
+          // FOV（視野角）を変更してズーム操作を実現 (20°〜100°の範囲に制限)
+          camera.fov = Math.max(20, Math.min(100, initialFov * factor));
+          camera.updateProjectionMatrix();
+        }
+      }, { passive: true });
+
+      dom.addEventListener('touchend', (e) => {
+        if (e.touches.length < 2) {
+          initialPinchDistance = null;
+        }
+      }, { passive: true });
+
+      // PC環境向けのマウスホイールでのズーム対応
+      dom.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const zoomSpeed = 0.05;
+        camera.fov = Math.max(20, Math.min(100, camera.fov + e.deltaY * zoomSpeed));
+        camera.updateProjectionMatrix();
+      }, { passive: false });
     }
 
     function initThree() {
@@ -420,7 +466,7 @@
       document.body.appendChild(renderer.domElement);
 
       orbitControls = new THREE.OrbitControls(camera, renderer.domElement);
-      orbitControls.enableZoom = false;
+      orbitControls.enableZoom = false; // カスタムズームを使うため標準ズームはOFF
       orbitControls.enablePan = false;
       orbitControls.rotateSpeed = -0.5;
       orbitControls.enabled = false;
@@ -430,8 +476,8 @@
 
       loadRealStarCatalog();
       setupSensorSync();
+      setupZoomControls(); // ズーム制御を設定
 
-      // リサイズおよびビジュアルビューポートのイベント監視
       window.addEventListener('resize', updateCanvasSize);
       if (window.visualViewport) {
         window.visualViewport.addEventListener('resize', updateCanvasSize);
@@ -439,7 +485,7 @@
 
       window.addEventListener('orientationchange', () => {
         screenOrientation = window.orientation || 0;
-        setTimeout(updateCanvasSize, 200); // 画面回転完了後の追従
+        setTimeout(updateCanvasSize, 200);
       });
     }
 
