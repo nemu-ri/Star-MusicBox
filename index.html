@@ -116,7 +116,6 @@
     <div id="sensor-info">モード: 画面タップで方位固定・連動</div>
   </div>
 
-  <!-- ♪ ボタン -->
   <button id="music-btn" title="星空オルゴール再生">
     <span class="material-symbols-outlined">music_note</span>
   </button>
@@ -197,21 +196,16 @@
     let initialPinchDistance = null;
     let initialFov = 75;
 
-    // --- 音声 synthesis (Web Audio API) 関連 ---
+    // 音声 & 画面固定用フラグ
     let audioCtx = null;
     let isPlayingMusic = false;
     let musicTimeoutId = null;
     let currentTimbre = 'kalimba';
 
-    // Fナチュラルマイナースケール (F, G, Ab, Bb, C, Db, Eb) の周波数テーブル (Octave 3 ~ 6)
     const fNaturalMinorScale = [
-      // Octave 3 (低音: 赤〜オレンジ系の星)
       174.61, 196.00, 207.65, 233.08, 261.63, 277.18, 311.13,
-      // Octave 4 (中低音: 黄色系の星)
       349.23, 392.00, 415.30, 466.16, 523.25, 554.37, 622.25,
-      // Octave 5 (中高音: 白系の星)
       698.46, 783.99, 830.61, 932.33, 1046.50, 1108.73, 1244.51,
-      // Octave 6 (高音: 青系の星)
       1396.91, 1567.98, 1661.22, 1864.66, 2093.00, 2217.46, 2489.02
     ];
 
@@ -232,8 +226,7 @@
 
     function createStarTexture() {
       const canvas = document.createElement('canvas');
-      canvas.width = 128; 
-      canvas.height = 128;
+      canvas.width = 128; canvas.height = 128;
       const ctx = canvas.getContext('2d');
       ctx.clearRect(0, 0, 128, 128);
 
@@ -243,9 +236,7 @@
       coreGrad.addColorStop(0.4, 'rgba(230, 240, 255, 0.5)');
       coreGrad.addColorStop(1.0, 'rgba(0, 0, 0, 0.0)');
       ctx.fillStyle = coreGrad;
-      ctx.beginPath(); 
-      ctx.arc(64, 64, 64, 0, Math.PI * 2); 
-      ctx.fill();
+      ctx.beginPath(); ctx.arc(64, 64, 64, 0, Math.PI * 2); ctx.fill();
 
       const flareGrad = ctx.createLinearGradient(0, 64, 128, 64);
       flareGrad.addColorStop(0.0, 'rgba(255, 255, 255, 0)');
@@ -574,7 +565,7 @@
 
     function setupSensorSync() {
       const handleOrientation = (e) => {
-        if (isManualMode) return;
+        if (isManualMode || isPlayingMusic) return;
 
         let alpha = e.alpha || 0;
         let beta = e.beta || 0;
@@ -610,7 +601,7 @@
     const q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));
 
     function updateCameraOrientation() {
-      if (isManualMode) return;
+      if (isManualMode || isPlayingMusic) return;
 
       const alpha = THREE.MathUtils.degToRad(deviceAlpha);
       const beta = THREE.MathUtils.degToRad(deviceBeta);
@@ -851,7 +842,7 @@
       }
 
       if (isManualMode) {
-        orbitControls.update();
+        if (!isPlayingMusic) orbitControls.update();
       } else {
         updateCameraOrientation();
       }
@@ -898,7 +889,6 @@
       }
     }
 
-    // サウンド生成（メモリ制限対策として disconnect() を追加した修正版）
     function playStarSound(freq, volume) {
       if (!audioCtx) return;
 
@@ -929,7 +919,6 @@
         overtone.start(now);
         overtone.stop(now + 0.3);
 
-        // 倍音ノードの解放
         setTimeout(() => {
           overtone.disconnect();
           overtoneGain.disconnect();
@@ -958,7 +947,6 @@
       osc.start(now);
       osc.stop(now + duration);
 
-      // メインノードの解放
       setTimeout(() => {
         osc.disconnect();
         gainNode.disconnect();
@@ -996,7 +984,8 @@
         isPlayingMusic = false;
         if (musicTimeoutId) clearTimeout(musicTimeoutId);
         musicBtn.classList.remove('playing');
-        sensorEl.innerText = "モード: ジャイロ連動中";
+        sensorEl.innerText = isManualMode ? "モード: 手動ドラッグ操作中" : "モード: ジャイロ連動中";
+        if (isManualMode) orbitControls.enabled = true;
         return;
       }
 
@@ -1004,16 +993,18 @@
 
       isPlayingMusic = true;
       musicBtn.classList.add('playing');
+      if (isManualMode) orbitControls.enabled = false; // 演奏中はドラッグも固定
 
       const visibleStars = [];
       const projVec = new THREE.Vector3();
       const posAttr = starMesh.geometry.attributes.position;
 
+      // 現在画面に見えている星（視野角・画角内）をすべて抽出
       for (let i = 0; i < realStarsData.length; i++) {
         projVec.fromBufferAttribute(posAttr, i);
         projVec.project(camera);
 
-        if (projVec.x >= -1.1 && projVec.x <= 1.1 && projVec.y >= -1.1 && projVec.y <= 1.1 && projVec.z < 1.0) {
+        if (projVec.x >= -1.0 && projVec.x <= 1.0 && projVec.y >= -1.0 && projVec.y <= 1.0 && projVec.z < 1.0) {
           visibleStars.push({
             index: i,
             screenY: projVec.y,
@@ -1026,13 +1017,15 @@
         sensorEl.innerText = "オルゴール: 視界内に星がありません";
         isPlayingMusic = false;
         musicBtn.classList.remove('playing');
+        if (isManualMode) orbitControls.enabled = true;
         return;
       }
 
+      // 上から下に向かって順番に演奏（見えている星の数制限を排除）
       visibleStars.sort((a, b) => b.screenY - a.screenY);
-      const selectedStars = visibleStars.slice(0, 50);
+      const selectedStars = visibleStars;
 
-      sensorEl.innerText = `♪ 星空オルゴール演奏中 (${selectedStars.length}個の星)`;
+      sensorEl.innerText = `♪ 画面固定中：演奏中 (${selectedStars.length}個の星)`;
 
       let currentIndex = 0;
 
@@ -1040,7 +1033,8 @@
         if (!isPlayingMusic || currentIndex >= selectedStars.length) {
           isPlayingMusic = false;
           musicBtn.classList.remove('playing');
-          sensorEl.innerText = "モード: ジャイロ連動中";
+          sensorEl.innerText = isManualMode ? "モード: 手動ドラッグ操作中" : "モード: ジャイロ連動中";
+          if (isManualMode) orbitControls.enabled = true;
           return;
         }
 
@@ -1052,7 +1046,8 @@
 
         currentIndex++;
 
-        const delay = 220 + Math.random() * 200;
+        // 星の数が多い場合でも途切れないスムーズな間隔
+        const delay = 160 + Math.random() * 140;
         musicTimeoutId = setTimeout(playNextStar, delay);
       }
 
@@ -1102,7 +1097,7 @@
 
     manualToggle.addEventListener('change', (e) => {
       isManualMode = e.target.checked;
-      orbitControls.enabled = isManualMode;
+      orbitControls.enabled = isManualMode && !isPlayingMusic;
       if (isManualMode) {
         const dir = new THREE.Vector3();
         camera.getWorldDirection(dir);
