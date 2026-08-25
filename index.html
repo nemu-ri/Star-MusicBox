@@ -519,8 +519,8 @@
         // 2.8乗に上げることで、1等星・2等星の大きさを急激にアップ
         const brightFactor = Math.pow(magRatio, 2.8);
 
-        // 暗い星（2.8px）〜 明るい星（最大28px）までサイズ幅を拡張
-        sizes.push(2.8 + brightFactor * 25.2);
+        // 暗い星（2.8px）〜 明るい星（最大30px）までサイズ幅を拡張
+        sizes.push(2.8 + brightFactor * 27.2);
 
         // 明るい星は完全に近いくっきり不透明度（最大1.0）、暗い星は0.6をキープ
         opacities.push(0.60 + Math.pow(magRatio, 1.5) * 0.40);
