@@ -158,7 +158,8 @@
     <div class="setting-item">
       <span>星座線を表示</span>
       <label class="switch">
-        <input type="checkbox" id="constellation-toggle" checked>
+        <!-- 初期状態をオフに変更 -->
+        <input type="checkbox" id="constellation-toggle">
         <span class="slider"></span>
       </label>
     </div>
@@ -185,7 +186,7 @@
     const sensorEl = document.getElementById('sensor-info');
 
     let isManualMode = false;
-    let showConstellations = true;
+    let showConstellations = false; // 初期値をオフに変更
     let realStarsData = [];
     let constellationLinesData = [];
     let constellationPointsList = [];
@@ -204,7 +205,8 @@
     // 音声 & 画面固定用フラグ
     let audioCtx = null;
     let isPlayingMusic = false;
-    let musicTimeoutId = null;
+    let activeNodes = [];
+    let activeTimeouts = [];
     let currentTimbre = 'kalimba';
 
     const fNaturalMinorScale = [
@@ -894,7 +896,7 @@
       }
     }
 
-    // --- 音声生成と星空演奏ロジック ---
+    // --- 音声生成と星空演奏ロジック（高精度タイムライン制御） ---
 
     function initAudioContext() {
       if (!audioCtx) {
@@ -905,68 +907,40 @@
       }
     }
 
-    function playStarSound(freq, volume) {
+    function scheduleStarSound(freq, volume, startTime) {
       if (!audioCtx) return;
-
-      if (audioCtx.state === 'suspended') {
-        audioCtx.resume();
-      }
 
       const osc = audioCtx.createOscillator();
       const gainNode = audioCtx.createGain();
-      const now = audioCtx.currentTime;
-      const duration = currentTimbre === 'synth' ? 2.5 : 1.8;
+      const duration = currentTimbre === 'synth' ? 2.2 : 1.5;
 
-      osc.frequency.setValueAtTime(freq, now);
+      osc.frequency.setValueAtTime(freq, startTime);
 
+      // ビブラート・残響の違和感を抑えた自然なエンベロープ設計
       if (currentTimbre === 'kalimba') {
         osc.type = 'sine';
-        
-        const overtone = audioCtx.createOscillator();
-        const overtoneGain = audioCtx.createGain();
-        overtone.type = 'triangle';
-        overtone.frequency.setValueAtTime(freq * 3.01, now);
-        
-        overtoneGain.gain.setValueAtTime(volume * 0.15, now);
-        overtoneGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.3);
-        
-        overtone.connect(overtoneGain);
-        overtoneGain.connect(audioCtx.destination);
-        overtone.start(now);
-        overtone.stop(now + 0.3);
-
-        setTimeout(() => {
-          overtone.disconnect();
-          overtoneGain.disconnect();
-        }, 350);
-
-        gainNode.gain.setValueAtTime(0.001, now);
-        gainNode.gain.linearRampToValueAtTime(volume * 0.4, now + 0.01);
-        gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 1.8);
-
+        gainNode.gain.setValueAtTime(0.0001, startTime);
+        gainNode.gain.linearRampToValueAtTime(volume * 0.4, startTime + 0.005);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + 1.2);
       } else if (currentTimbre === 'piano') {
         osc.type = 'triangle';
-        gainNode.gain.setValueAtTime(0.001, now);
-        gainNode.gain.linearRampToValueAtTime(volume * 0.5, now + 0.02);
-        gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 1.2);
-
+        gainNode.gain.setValueAtTime(0.0001, startTime);
+        gainNode.gain.linearRampToValueAtTime(volume * 0.5, startTime + 0.01);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + 1.0);
       } else {
         osc.type = 'sine';
-        gainNode.gain.setValueAtTime(0.001, now);
-        gainNode.gain.linearRampToValueAtTime(volume * 0.3, now + 0.3);
-        gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 2.5);
+        gainNode.gain.setValueAtTime(0.0001, startTime);
+        gainNode.gain.linearRampToValueAtTime(volume * 0.3, startTime + 0.15);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + 2.2);
       }
 
       osc.connect(gainNode);
       gainNode.connect(audioCtx.destination);
 
-      osc.start(now);
-      osc.stop(now + duration);
+      osc.start(startTime);
+      osc.stop(startTime + duration);
 
-      setTimeout(() => {
-        osc.disconnect();
-        gainNode.disconnect();
-      }, (duration + 0.1) * 1000);
+      activeNodes.push(osc, gainNode);
     }
 
     function convertStarToSound(star) {
@@ -999,33 +973,48 @@
       starMesh.geometry.attributes.aFlash.needsUpdate = true;
     }
 
+    function stopMusicPlayback() {
+      isPlayingMusic = false;
+      const musicBtn = document.getElementById('music-btn');
+      musicBtn.classList.remove('playing');
+
+      activeTimeouts.forEach(id => clearTimeout(id));
+      activeTimeouts = [];
+
+      activeNodes.forEach(node => {
+        try {
+          if (node.stop) node.stop();
+          node.disconnect();
+        } catch(e) {}
+      });
+      activeNodes = [];
+
+      resetFlashBoosts();
+      sensorEl.innerText = isManualMode ? "モード: 手動ドラッグ操作中" : "モード: ジャイロ連動中";
+      if (isManualMode) orbitControls.enabled = true;
+    }
+
     function toggleStarMusic() {
-      if (showConstellations) return; // 星座線表示中は演奏させない
+      if (showConstellations) return;
 
       initAudioContext();
-      const musicBtn = document.getElementById('music-btn');
 
       if (isPlayingMusic) {
-        isPlayingMusic = false;
-        if (musicTimeoutId) clearTimeout(musicTimeoutId);
-        musicBtn.classList.remove('playing');
-        resetFlashBoosts();
-        sensorEl.innerText = isManualMode ? "モード: 手動ドラッグ操作中" : "モード: ジャイロ連動中";
-        if (isManualMode) orbitControls.enabled = true;
+        stopMusicPlayback();
         return;
       }
 
       if (!starMesh || !realStarsData.length) return;
 
       isPlayingMusic = true;
+      const musicBtn = document.getElementById('music-btn');
       musicBtn.classList.add('playing');
-      if (isManualMode) orbitControls.enabled = false; // 演奏中はドラッグ不可で画面固定
+      if (isManualMode) orbitControls.enabled = false;
 
       const visibleStars = [];
       const projVec = new THREE.Vector3();
       const posAttr = starMesh.geometry.attributes.position;
 
-      // 現在画面に見えている星（視野角・画角内）をすべて抽出
       for (let i = 0; i < realStarsData.length; i++) {
         projVec.fromBufferAttribute(posAttr, i);
         projVec.project(camera);
@@ -1041,43 +1030,38 @@
 
       if (visibleStars.length === 0) {
         sensorEl.innerText = "オルゴール: 視界内に星がありません";
-        isPlayingMusic = false;
-        musicBtn.classList.remove('playing');
-        if (isManualMode) orbitControls.enabled = true;
+        stopMusicPlayback();
         return;
       }
 
-      // 上から下に向かって順番に演奏
       visibleStars.sort((a, b) => b.screenY - a.screenY);
-      const selectedStars = visibleStars;
 
-      sensorEl.innerText = `♪ 画面固定中：演奏中 (${selectedStars.length}個の星)`;
+      sensorEl.innerText = `♪ 画面固定中：演奏中 (${visibleStars.length}個の星)`;
 
-      let currentIndex = 0;
+      const startTime = audioCtx.currentTime + 0.1;
+      let accumulatedDelay = 0;
 
-      function playNextStar() {
-        if (!isPlayingMusic || currentIndex >= selectedStars.length) {
-          isPlayingMusic = false;
-          musicBtn.classList.remove('playing');
-          resetFlashBoosts();
-          sensorEl.innerText = isManualMode ? "モード: 手動ドラッグ操作中" : "モード: ジャイロ連動中";
-          if (isManualMode) orbitControls.enabled = true;
-          return;
-        }
-
-        const item = selectedStars[currentIndex];
+      // すべての表示されている星に対して途切れずスケジュールを設定
+      visibleStars.forEach((item, idx) => {
         const { freq, volume } = convertStarToSound(item.starData);
+        const noteTime = startTime + accumulatedDelay;
 
-        playStarSound(freq, volume);
-        triggerStarFlash(item.index);
+        scheduleStarSound(freq, volume, noteTime);
 
-        currentIndex++;
+        const timeoutDelay = (noteTime - audioCtx.currentTime) * 1000;
+        const tid = setTimeout(() => {
+          if (isPlayingMusic) triggerStarFlash(item.index);
+        }, Math.max(0, timeoutDelay));
+        activeTimeouts.push(tid);
 
-        const delay = 160 + Math.random() * 140;
-        musicTimeoutId = setTimeout(playNextStar, delay);
-      }
+        accumulatedDelay += 0.16 + Math.random() * 0.14;
+      });
 
-      playNextStar();
+      const totalDuration = (accumulatedDelay + 1.5) * 1000;
+      const endTid = setTimeout(() => {
+        if (isPlayingMusic) stopMusicPlayback();
+      }, totalDuration);
+      activeTimeouts.push(endTid);
     }
 
 
