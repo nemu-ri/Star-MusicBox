@@ -706,7 +706,7 @@
 
         opacities.push(baseOpacity);
         mags.push(star.mag);
-        flashBoosts.push(0.0); // 発光ブースト用
+        flashBoosts.push(0.0);
       });
 
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
@@ -731,7 +731,6 @@
           varying float vOpacity;
           
           void main() {
-            // 発光時は白く輝く
             vColor = mix(color, vec3(1.0, 1.0, 1.0), aFlash * 0.7);
             
             float zoomFactor = smoothstep(75.0, 20.0, uFov);
@@ -743,7 +742,6 @@
             }
 
             vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-            // 音が鳴った一瞬だけ星のサイズを拡大させる
             float currentSize = aSize * (1.0 + aFlash * 2.5);
             gl_PointSize = currentSize * (180.0 / -mvPosition.z);
             gl_Position = projectionMatrix * mvPosition;
@@ -832,13 +830,12 @@
         starMesh.material.uniforms.uFov.value = camera.fov;
       }
 
-      // 星の一瞬の発光（Flash）アニメーションの減衰処理
       if (starMesh && starMesh.geometry.attributes.aFlash) {
         const flashArr = starMesh.geometry.attributes.aFlash.array;
         let needsUpdate = false;
         for (let i = 0; i < flashArr.length; i++) {
           if (flashArr[i] > 0) {
-            flashArr[i] -= 0.05; // 徐々に消灯
+            flashArr[i] -= 0.05;
             if (flashArr[i] < 0) flashArr[i] = 0;
             needsUpdate = true;
           }
@@ -901,7 +898,7 @@
       }
     }
 
-    // サウンド生成（修正版: 演奏完了後にノードを解放してメモリ詰まりを防止）
+    // サウンド生成（メモリ制限対策として disconnect() を追加した修正版）
     function playStarSound(freq, volume) {
       if (!audioCtx) return;
 
@@ -919,7 +916,6 @@
       if (currentTimbre === 'kalimba') {
         osc.type = 'sine';
         
-        // 倍音用オシレータ
         const overtone = audioCtx.createOscillator();
         const overtoneGain = audioCtx.createGain();
         overtone.type = 'triangle';
@@ -930,11 +926,10 @@
         
         overtone.connect(overtoneGain);
         overtoneGain.connect(audioCtx.destination);
-        
         overtone.start(now);
         overtone.stop(now + 0.3);
 
-        // 使用が終わった倍音ノードを切断して解放
+        // 倍音ノードの解放
         setTimeout(() => {
           overtone.disconnect();
           overtoneGain.disconnect();
@@ -963,32 +958,27 @@
       osc.start(now);
       osc.stop(now + duration);
 
-      // 音が消えたらノードを切断してメモリ解放（12音程度で止まる問題を解消）
+      // メインノードの解放
       setTimeout(() => {
         osc.disconnect();
         gainNode.disconnect();
       }, (duration + 0.1) * 1000);
     }
 
-    // 星の物理属性を「音」に変換する関数
     function convertStarToSound(star) {
-      // 1. ボリューム (明るさ / 等級magに基づく): 明るい(mag小) => 大音量
       const normMag = Math.max(-1.5, Math.min(6.5, star.mag));
       const volume = Math.pow(1.0 - (normMag + 1.5) / 8.0, 1.5) * 0.8 + 0.1;
 
-      // 2. 音の高さ (色 / B-V色指数bvに基づく): 赤い(bv高) => 低音, 青い(bv低) => 高音
       const bv = star.bv !== undefined ? star.bv : 0.4;
       const clampedBv = Math.max(-0.3, Math.min(1.6, bv));
-      const colorRatio = 1.0 - (clampedBv + 0.3) / 1.9; // 0.0(赤:低音) ~ 1.0(青:高音)
+      const colorRatio = 1.0 - (clampedBv + 0.3) / 1.9;
 
-      // Fナチュラルマイナースケールのインデックス割り当て (28音階)
       const scaleIndex = Math.floor(colorRatio * (fNaturalMinorScale.length - 1));
       const freq = fNaturalMinorScale[scaleIndex];
 
       return { freq, volume };
     }
 
-    // 星を一時的に強く輝かせる
     function triggerStarFlash(starIndex) {
       if (!starMesh || !starMesh.geometry.attributes.aFlash) return;
       const flashArr = starMesh.geometry.attributes.aFlash.array;
@@ -998,13 +988,11 @@
       }
     }
 
-    // オルゴール演奏メイン処理
     function toggleStarMusic() {
       initAudioContext();
       const musicBtn = document.getElementById('music-btn');
 
       if (isPlayingMusic) {
-        // 停止処理
         isPlayingMusic = false;
         if (musicTimeoutId) clearTimeout(musicTimeoutId);
         musicBtn.classList.remove('playing');
@@ -1017,20 +1005,18 @@
       isPlayingMusic = true;
       musicBtn.classList.add('playing');
 
-      // 1. 現在の画面（視界内）に映っている星を抽出してY座標（画面上の高さ）でソート
       const visibleStars = [];
       const projVec = new THREE.Vector3();
       const posAttr = starMesh.geometry.attributes.position;
 
       for (let i = 0; i < realStarsData.length; i++) {
         projVec.fromBufferAttribute(posAttr, i);
-        projVec.project(camera); // スクリーン座標変換 (-1.0 ~ 1.0)
+        projVec.project(camera);
 
-        // 画面内に映っているかチェック
         if (projVec.x >= -1.1 && projVec.x <= 1.1 && projVec.y >= -1.1 && projVec.y <= 1.1 && projVec.z < 1.0) {
           visibleStars.push({
             index: i,
-            screenY: projVec.y, // 上(1.0) から 下(-1.0)
+            screenY: projVec.y,
             starData: realStarsData[i]
           });
         }
@@ -1043,15 +1029,11 @@
         return;
       }
 
-      // 画面の「上から順」にソート (screenYが大きい順)
       visibleStars.sort((a, b) => b.screenY - a.screenY);
-
-      // 上限を50個程度に間引く
       const selectedStars = visibleStars.slice(0, 50);
 
       sensorEl.innerText = `♪ 星空オルゴール演奏中 (${selectedStars.length}個の星)`;
 
-      // 2. 演奏シーケンスの実行
       let currentIndex = 0;
 
       function playNextStar() {
@@ -1065,13 +1047,11 @@
         const item = selectedStars[currentIndex];
         const { freq, volume } = convertStarToSound(item.starData);
 
-        // 音の鳴動と視覚フィードバック（キラッと光る）
         playStarSound(freq, volume);
         triggerStarFlash(item.index);
 
         currentIndex++;
 
-        // ゆったりとしたオルゴールリズム（200ms〜450ms間隔）
         const delay = 220 + Math.random() * 200;
         musicTimeoutId = setTimeout(playNextStar, delay);
       }
