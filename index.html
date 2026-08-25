@@ -25,7 +25,6 @@
       line-height: 1.5; pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,0.8); 
     }
 
-    /* ★ 星空保存ボタン */
     #save-btn {
       position: absolute; top: 12px; right: 116px; z-index: 30;
       width: 44px; height: 44px; background: rgba(255,255,255,0.2); backdrop-filter: blur(8px);
@@ -104,7 +103,6 @@
     }
     select option { background: #0a0f1e; color: white; }
 
-    /* ライブラリ表示スタイル */
     .library-item {
       background: rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 12px;
       margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;
@@ -224,7 +222,6 @@
     let initialPinchDistance = null;
     let initialFov = 75;
 
-    // 音声 & スケジューラー用管理変数
     let audioCtx = null;
     let isPlayingMusic = false;
     let bgmIntervalId = null;
@@ -254,6 +251,26 @@
       { name: "シドニー", lat: -33.8688, lon: 151.2093 },
       { name: "ホノルル", lat: 21.3069, lon: -157.8583 }
     ];
+
+    // メモリ安全なグループ削除ヘルパー
+    function clearGroup(group) {
+      while (group.children.length > 0) {
+        const child = group.children[0];
+        group.remove(child);
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) {
+          if (Array.isArray(child.material)) {
+            child.material.forEach(m => {
+              if (m.map) m.map.dispose();
+              m.dispose();
+            });
+          } else {
+            if (child.material.map) child.material.map.dispose();
+            child.material.dispose();
+          }
+        }
+      }
+    }
 
     function createStarTexture() {
       const canvas = document.createElement('canvas');
@@ -700,7 +717,19 @@
 
     function buildRealStarField() {
       if (!realStarsData.length) return;
-      if (starMesh) scene.remove(starMesh);
+      
+      // メモリ解放を追加（固まり現象を防止）
+      if (starMesh) {
+        scene.remove(starMesh);
+        if (starMesh.geometry) starMesh.geometry.dispose();
+        if (starMesh.material) {
+          if (starMesh.material.uniforms && starMesh.material.uniforms.pointTexture.value) {
+            starMesh.material.uniforms.pointTexture.value.dispose();
+          }
+          starMesh.material.dispose();
+        }
+        starMesh = null;
+      }
 
       const geometry = new THREE.BufferGeometry();
       const positions = [], colors = [], sizes = [], opacities = [], mags = [], flashBoosts = [];
@@ -794,9 +823,7 @@
     }
 
     function buildConstellations(now) {
-      while (constellationGroup.children.length > 0) {
-        constellationGroup.remove(constellationGroup.children[0]);
-      }
+      clearGroup(constellationGroup);
       if (!showConstellations || !constellationLinesData.length) return;
 
       const radius = 99;
@@ -822,9 +849,7 @@
     }
 
     function buildSolarSystem(date) {
-      while (solarSystemGroup.children.length > 0) {
-        solarSystemGroup.remove(solarSystemGroup.children[0]);
-      }
+      clearGroup(solarSystemGroup);
 
       const radius = 98;
       getSolarSystemPositions(date).forEach(body => {
@@ -867,7 +892,8 @@
         }
       }
 
-      if (nowTime - lastCalcTime > 10000) {
+      // 画面のチラつき・固まりを防ぐため、全更新の間隔を10秒から60秒に伸ばして軽量化
+      if (nowTime - lastCalcTime > 60000) {
         if (realStarsData.length > 0) buildRealStarField();
         lastCalcTime = nowTime;
       }
@@ -908,8 +934,6 @@
         locationEl.innerText = `観測地: ${cityName}`;
       }
     }
-
-    // --- 音声 & ライブラリ再生モジュール ---
 
     function initAudioContext() {
       if (!audioCtx) {
@@ -994,7 +1018,6 @@
         }
       }
 
-      // 上から順にソート (screenYが高い順)
       stars.sort((a, b) => b.screenY - a.screenY);
       return stars;
     }
@@ -1023,7 +1046,6 @@
       }
     }
 
-    // ライブラリ内の1つの星空を再生
     function playLibraryItem(id) {
       initAudioContext();
 
@@ -1049,56 +1071,45 @@
       let starIndex = 0;
       let nextNoteTime = audioCtx.currentTime + 0.1;
 
-      // フリーズ対策を行ったタイマースケジューラー
       bgmIntervalId = setInterval(() => {
         if (!isPlayingMusic) return;
 
-        // タブ切り替えやスリープによる時刻遅れを安全補正
         if (nextNoteTime < audioCtx.currentTime) {
           nextNoteTime = audioCtx.currentTime + 0.1;
         }
 
         while (nextNoteTime < audioCtx.currentTime + 1.0) {
           if (starIndex >= item.stars.length) {
-            starIndex = 0; // ループ演奏
+            starIndex = 0;
           }
 
           const star = item.stars[starIndex];
 
-          // 1. 明るさ (mag) をボリューム（音量）へ変換
           const normMag = Math.max(-1.5, Math.min(6.5, star.mag));
           const volume = Math.pow(1.0 - (normMag + 1.5) / 8.0, 1.5) * 0.7 + 0.1;
 
-          // 2. 色 (bv) を Fナチュラルマイナースケール（音高・オクターブ）へ変換
           const bv = star.bv !== undefined ? star.bv : 0.4;
           const clampedBv = Math.max(-0.3, Math.min(1.6, bv));
-          const colorRatio = 1.0 - (clampedBv + 0.3) / 1.9; // 1.0(青=高音) 〜 0.0(赤=低音)
+          const colorRatio = 1.0 - (clampedBv + 0.3) / 1.9;
           const scaleIndex = Math.floor(colorRatio * (fNaturalMinorScale.length - 1));
           const freq = fNaturalMinorScale[scaleIndex];
 
           scheduleStarSound(freq, volume, nextNoteTime);
 
-          // 可能であれば画面上の該当星をフラッシュ
           if (star.origIndex !== undefined) {
             const delayMs = Math.max(0, (nextNoteTime - audioCtx.currentTime) * 1000);
             const tid = setTimeout(() => {
               if (isPlayingMusic) triggerStarFlash(star.origIndex);
+              activeTimeouts = activeTimeouts.filter(id => id !== tid);
             }, delayMs);
             activeTimeouts.push(tid);
           }
 
           starIndex++;
-          // 睡眠前のオルゴールらしくゆったりとしたテンポ (約300〜450ms間隔)
           nextNoteTime += 0.30 + Math.random() * 0.15;
-        }
-
-        if (activeTimeouts.length > 50) {
-          activeTimeouts = activeTimeouts.slice(-20);
         }
       }, 100);
     }
-
-    // --- ライブラリ管理 (保存・削除・描画) ---
 
     function loadLibrary() {
       const data = localStorage.getItem('star_library_data');
@@ -1127,7 +1138,6 @@
         return;
       }
 
-      // 画面上部から順にソートされた星データを抽出
       const starsData = visibleStars.map(s => ({
         mag: s.starData.mag,
         bv: s.starData.bv,
@@ -1149,7 +1159,6 @@
       saveLibraryToStorage();
       renderLibrary();
 
-      // 設定画面を開いて確認しやすくする
       const sidebar = document.getElementById('sidebar');
       const toggleIcon = document.getElementById('toggle-icon');
       if (!sidebar.classList.contains('open')) {
@@ -1217,8 +1226,6 @@
         container.appendChild(div);
       });
     }
-
-    // --- UIイベント設定 ---
 
     const sidebar = document.getElementById('sidebar');
     const sidebarToggle = document.getElementById('sidebar-toggle');
@@ -1303,7 +1310,6 @@
       });
     }
 
-    // バックグラウンドに移動した際の安全停止処理
     document.addEventListener('visibilitychange', () => {
       if (document.hidden && isPlayingMusic) {
         stopMusicPlayback();
