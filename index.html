@@ -442,6 +442,12 @@
       renderer.setSize(width, height);
     }
 
+    function updateStarFovUniform() {
+      if (starMesh && starMesh.material.uniforms.uFov) {
+        starMesh.material.uniforms.uFov.value = camera.fov;
+      }
+    }
+
     function setupZoomControls() {
       const dom = renderer.domElement;
 
@@ -464,6 +470,7 @@
           const factor = initialPinchDistance / currentDistance;
           camera.fov = Math.max(20, Math.min(100, initialFov * factor));
           camera.updateProjectionMatrix();
+          updateStarFovUniform();
         }
       }, { passive: true });
 
@@ -478,6 +485,7 @@
         const zoomSpeed = 0.05;
         camera.fov = Math.max(20, Math.min(100, camera.fov + e.deltaY * zoomSpeed));
         camera.updateProjectionMatrix();
+        updateStarFovUniform();
       }, { passive: false });
     }
 
@@ -676,24 +684,17 @@
           void main() {
             vColor = color;
             
-            // FOV（ズームレベル）に応じた限界等級の計算（ズームインで細かな星まで見える）
-            // 広角(FOV 100°)で限界等級 約2.5等、標準(FOV 75°)で約4.0等、望遠(FOV 20°)で全等級(6.5等)表示
-            float minFov = 20.0;
-            float maxFov = 100.0;
-            float fovRatio = clamp((uFov - minFov) / (maxFov - minFov), 0.0, 1.0);
-            float limitMag = mix(6.5, 2.5, fovRatio);
+            // FOVが広がる（ズームアウトする）につれて限界限界等級を下げる
+            // ズームイン(FOV 30): 約6.5等星まで表示
+            // ズームアウト(FOV 90): 約2.5等星以上の明るい星のみ表示
+            float magCutoff = mix(6.5, 2.5, smoothstep(30.0, 90.0, uFov));
             
-            // 限界等級付近でなめらかにフェードアウト（0.8等級幅で遷移）
-            float fadeWidth = 0.8;
-            float magFactor = clamp((limitMag - aMag) / fadeWidth, 0.0, 1.0);
-            
-            vOpacity = aOpacity * magFactor;
-            
+            // 限界等級付近の星を滑らかにフェードアウトさせる
+            float fadeFactor = smoothstep(magCutoff, magCutoff - 1.0, aMag);
+            vOpacity = aOpacity * fadeFactor;
+
             vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-            
-            // ズームイン時にも自然な遠近感・サイズ感が残るよう調整
-            float fovScale = 75.0 / uFov;
-            gl_PointSize = aSize * (180.0 / -mvPosition.z) * sqrt(fovScale);
+            gl_PointSize = aSize * (180.0 / -mvPosition.z);
             gl_Position = projectionMatrix * mvPosition;
           }
         `,
@@ -703,7 +704,7 @@
           varying float vOpacity;
           
           void main() {
-            if (vOpacity <= 0.01) discard; // 完全に透明になった星は描画スキップ
+            if (vOpacity <= 0.001) discard;
             vec4 texColor = texture2D(pointTexture, gl_PointCoord);
             gl_FragColor = vec4(vColor, vOpacity) * texColor;
           }
@@ -779,11 +780,6 @@
       if (nowTime - lastCalcTime > 10000) {
         if (realStarsData.length > 0) buildRealStarField();
         lastCalcTime = nowTime;
-      }
-
-      // ズーム(FOV)の最新値を頂点シェーダーへリアルタイム伝達
-      if (starMesh && starMesh.material.uniforms) {
-        starMesh.material.uniforms.uFov.value = camera.fov;
       }
 
       if (isManualMode) {
