@@ -19,13 +19,15 @@
     
     .material-symbols-outlined { font-size: 20px; vertical-align: middle; user-select: none; }
 
-    #info { position: absolute; top: 10px; left: 10px; font-size: 12px; color: rgba(255,255,255,0.9); z-index: 5; line-height: 1.5; pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,0.8); }
+    /* 設定ボタンやリロードボタンと被らないよう右側に余白を設定 */
+    #info { position: absolute; top: 10px; left: 10px; right: 120px; font-size: 12px; color: rgba(255,255,255,0.9); z-index: 5; line-height: 1.5; pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,0.8); }
 
+    /* 設定ボタンの左隣に配置 */
     #reload-btn {
-      position: absolute; top: 65px; left: 10px; z-index: 30;
-      background: rgba(37, 99, 235, 0.85); backdrop-filter: blur(8px);
-      border: 1px solid rgba(255,255,255,0.4); border-radius: 6px; color: white;
-      padding: 6px 10px; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 4px;
+      position: absolute; top: 12px; right: 64px; z-index: 30;
+      width: 44px; height: 44px; background: rgba(255,255,255,0.2); backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.4); border-radius: 50%; color: white;
+      cursor: pointer; display: flex; justify-content: center; align-items: center;
       pointer-events: auto; box-shadow: 0 2px 6px rgba(0,0,0,0.5);
     }
 
@@ -91,11 +93,12 @@
     <div id="sensor-info">モード: 画面タップで方位固定・連動</div>
   </div>
 
-  <button id="reload-btn">
-    <span class="material-symbols-outlined">my_location</span> 方角・位置を再取得
+  <!-- リロードボタン（設定ボタンの左横に配置・Google Fontsのrefreshアイコン使用） -->
+  <button id="reload-btn" title="方角・位置を再取得">
+    <span class="material-symbols-outlined">refresh</span>
   </button>
 
-  <button id="sidebar-toggle">
+  <button id="sidebar-toggle" title="設定">
     <span class="material-symbols-outlined" id="toggle-icon">settings</span>
   </button>
 
