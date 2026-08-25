@@ -12,17 +12,15 @@
       background: #000;
       color: #fff;
       font-family: sans-serif;
-      touch-action: none; /* ピンチズームやダブルタップ拡大をブラウザデフォルト挙動から保護 */
-      user-select: none;   /* 不要なテキスト選択を防止 */
+      touch-action: none;
+      user-select: none;
     }
     canvas { display: block; }
     
     .material-symbols-outlined { font-size: 20px; vertical-align: middle; user-select: none; }
 
-    /* 設定ボタンやリロードボタンと被らないよう右側に余白を設定 */
     #info { position: absolute; top: 10px; left: 10px; right: 120px; font-size: 12px; color: rgba(255,255,255,0.9); z-index: 5; line-height: 1.5; pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,0.8); }
 
-    /* 設定ボタンの左隣に配置 */
     #reload-btn {
       position: absolute; top: 12px; right: 64px; z-index: 30;
       width: 44px; height: 44px; background: rgba(255,255,255,0.2); backdrop-filter: blur(8px);
@@ -147,7 +145,7 @@
     let showConstellations = true;
     let realStarsData = [];
     let constellationLinesData = [];
-    let constellationStarKeys = new Set(); // 星座を構成する星のキーセット
+    let constellationStarKeys = new Set();
     let solarSystemGroup = new THREE.Group();
     let constellationGroup = new THREE.Group();
     let lastCalcTime = 0;
@@ -222,12 +220,14 @@
 
         constellationLinesData = constData.features;
 
-        // 星座の線を構成する頂点座標をキーとして保存
+        // 星座の線を構成する頂点座標キーを取得（少し許容誤差を持って判定できるように丸めを1桁にする）
         constellationStarKeys.clear();
         constellationLinesData.forEach(feature => {
-          feature.geometry.coordinates.forEach(line => {
+          const geometry = feature.geometry;
+          const lines = geometry.type === 'MultiLineString' ? geometry.coordinates : [geometry.coordinates];
+          lines.forEach(line => {
             line.forEach(pt => {
-              const key = `${pt[0].toFixed(2)},${pt[1].toFixed(2)}`;
+              const key = `${pt[0].toFixed(1)},${pt[1].toFixed(1)}`;
               constellationStarKeys.add(key);
             });
           });
@@ -245,8 +245,7 @@
           else if (bv < 1.2) color.setHex(0xffdd85);
           else color.setHex(0xffa050);
 
-          // 星座を構成する星か判定
-          const starKey = `${coords[0].toFixed(2)},${coords[1].toFixed(2)}`;
+          const starKey = `${coords[0].toFixed(1)},${coords[1].toFixed(1)}`;
           const isConstellationStar = constellationStarKeys.has(starKey);
 
           return { ra: coords[0] / 15, dec: coords[1], mag: mag, color: color, isConstellationStar: isConstellationStar };
@@ -576,15 +575,13 @@
       }
     }
 
-    // 等級ごとの指定pxサイズを線形補間（ラープ）で計算する関数
     function getExactStarSize(mag, isConstellationStar) {
       if (isConstellationStar) {
-        if (mag < 2.5) return 9.0;      // 2等（およびそれ以上明るい星）: 9px
-        if (mag < 3.5) return 7.0;      // 3等: 7px
-        return 4.0;                     // それ以下の等級: 4px
+        if (mag < 2.5) return 9.0;
+        if (mag < 3.5) return 7.0;
+        return 4.0;
       }
 
-      // 星座外の星の標準サイズテーブル
       const table = [
         [-1.5, 30.0],
         [ 0.0, 19.5],
@@ -625,16 +622,13 @@
         const c = star.color;
         colors.push(c.r, c.g, c.b);
 
-        // 指定条件に基づくサイズ計算
         const starSize = getExactStarSize(star.mag, star.isConstellationStar);
         sizes.push(starSize);
 
-        // 透明度の計算
         const normMag = Math.max(-1.5, Math.min(6.5, star.mag));
         const magRatio = 1.0 - (normMag + 1.5) / 8.0;
         let baseOpacity = 0.60 + Math.pow(magRatio, 1.5) * 0.40;
 
-        // 星座を構成する星の場合は透明度を +0.05 加算
         if (star.isConstellationStar) {
           baseOpacity = Math.min(1.0, baseOpacity + 0.05);
         }
@@ -693,17 +687,25 @@
       if (!showConstellations || !constellationLinesData.length) return;
 
       const radius = 99;
-      const lineMaterial = new THREE.LineBasicMaterial({ color: 0x5599ff, transparent: true, opacity: 0.5 });
+      const lineMaterial = new THREE.LineBasicMaterial({ color: 0x66aaff, transparent: true, opacity: 0.6 });
 
       constellationLinesData.forEach(feature => {
-        feature.geometry.coordinates.forEach(line => {
+        const geometry = feature.geometry;
+        // LineString または MultiLineString の両方のデータ構造を正確に判定して線を描画
+        const lines = geometry.type === 'MultiLineString' ? geometry.coordinates : [geometry.coordinates];
+
+        lines.forEach(line => {
           const points = [];
           line.forEach(pt => {
+            // 赤経 (度) を時間に変換 (/15) して 高度・方位角へ変換
             const pos = raDecToAltAz(pt[0] / 15, pt[1], userLat, userLon, now);
             points.push(altAzToVector3(pos.alt, pos.az, radius));
           });
-          const geometry = new THREE.BufferGeometry().setFromPoints(points);
-          constellationGroup.add(new THREE.Line(geometry, lineMaterial));
+
+          if (points.length > 1) {
+            const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
+            constellationGroup.add(new THREE.Line(lineGeometry, lineMaterial));
+          }
         });
       });
     }
