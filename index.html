@@ -20,9 +20,24 @@
     .material-symbols-outlined { font-size: 20px; vertical-align: middle; user-select: none; }
 
     #info { 
-      position: absolute; top: 10px; left: 10px; right: 120px; 
+      position: absolute; top: 10px; left: 10px; right: 180px; 
       font-size: 12px; color: rgba(255,255,255,0.9); z-index: 5; 
       line-height: 1.5; pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,0.8); 
+    }
+
+    /* ♪ オルゴール演奏ボタン */
+    #music-btn {
+      position: absolute; top: 12px; right: 116px; z-index: 30;
+      width: 44px; height: 44px; background: rgba(255,255,255,0.2); backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.4); border-radius: 50%; color: white;
+      cursor: pointer; display: flex; justify-content: center; align-items: center;
+      pointer-events: auto; box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+      transition: background 0.3s, transform 0.2s;
+    }
+    #music-btn.playing {
+      background: rgba(255, 215, 0, 0.4);
+      border-color: rgba(255, 215, 0, 0.8);
+      box-shadow: 0 0 12px rgba(255, 215, 0, 0.6);
     }
 
     #reload-btn {
@@ -86,6 +101,12 @@
     .city-item:last-child { border-bottom: none; }
     .city-item:hover { background: rgba(255,255,255,0.15); }
     .city-item.active { background: rgba(37, 99, 235, 0.4); color: #93c5fd; font-weight: bold; }
+    
+    select {
+      background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3);
+      color: white; padding: 4px 8px; border-radius: 4px; outline: none;
+    }
+    select option { background: #0a0f1e; color: white; }
   </style>
 </head>
 <body>
@@ -94,6 +115,11 @@
     <div id="location-info">観測地: 現在地を取得中...</div>
     <div id="sensor-info">モード: 画面タップで方位固定・連動</div>
   </div>
+
+  <!-- ♪ ボタン -->
+  <button id="music-btn" title="星空オルゴール再生">
+    <span class="material-symbols-outlined">music_note</span>
+  </button>
 
   <button id="reload-btn" title="方角・位置を再取得">
     <span class="material-symbols-outlined">refresh</span>
@@ -108,6 +134,15 @@
       <span class="material-symbols-outlined">settings</span> 設定
     </div>
     
+    <div class="setting-item">
+      <span>音色タイプ</span>
+      <select id="timbre-select">
+        <option value="kalimba">カリンバ (入眠用)</option>
+        <option value="piano">ピアノ</option>
+        <option value="synth">シンセパッド</option>
+      </select>
+    </div>
+
     <div class="setting-item">
       <span>手動操作モード</span>
       <label class="switch">
@@ -161,6 +196,24 @@
 
     let initialPinchDistance = null;
     let initialFov = 75;
+
+    // --- 音声 synthesis (Web Audio API) 関連 ---
+    let audioCtx = null;
+    let isPlayingMusic = false;
+    let musicTimeoutId = null;
+    let currentTimbre = 'kalimba';
+
+    // Fナチュラルマイナースケール (F, G, Ab, Bb, C, Db, Eb) の周波数テーブル (Octave 3 ~ 6)
+    const fNaturalMinorScale = [
+      // Octave 3 (低音: 赤〜オレンジ系の星)
+      174.61, 196.00, 207.65, 233.08, 261.63, 277.18, 311.13,
+      // Octave 4 (中低音: 黄色系の星)
+      349.23, 392.00, 415.30, 466.16, 523.25, 554.37, 622.25,
+      // Octave 5 (中高音: 白系の星)
+      698.46, 783.99, 830.61, 932.33, 1046.50, 1108.73, 1244.51,
+      // Octave 6 (高音: 青系の星)
+      1396.91, 1567.98, 1661.22, 1864.66, 2093.00, 2217.46, 2489.02
+    ];
 
     const cities = [
       { name: "東京", lat: 35.6812, lon: 139.7671 },
@@ -253,7 +306,7 @@
           const ra = coords[0] / 15;
           const dec = coords[1];
           const mag = f.properties.mag;
-          const bv = f.properties.bv || 0.4;
+          const bv = f.properties.bv !== undefined ? f.properties.bv : 0.4;
 
           let color = new THREE.Color(0xffffff);
           if (bv < 0.0) color.setHex(0x9bb0ff);
@@ -264,7 +317,7 @@
 
           const isConstellationStar = isPointNearConstellation(ra, dec);
 
-          return { ra, dec, mag, color, isConstellationStar };
+          return { ra, dec, mag, bv, color, isConstellationStar };
         });
 
         buildRealStarField();
@@ -628,7 +681,7 @@
       if (starMesh) scene.remove(starMesh);
 
       const geometry = new THREE.BufferGeometry();
-      const positions = [], colors = [], sizes = [], opacities = [], mags = [];
+      const positions = [], colors = [], sizes = [], opacities = [], mags = [], flashBoosts = [];
       const now = new Date();
       const radius = 100;
 
@@ -653,6 +706,7 @@
 
         opacities.push(baseOpacity);
         mags.push(star.mag);
+        flashBoosts.push(0.0); // 発光ブースト用
       });
 
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
@@ -660,6 +714,7 @@
       geometry.setAttribute('aSize', new THREE.Float32BufferAttribute(sizes, 1));
       geometry.setAttribute('aOpacity', new THREE.Float32BufferAttribute(opacities, 1));
       geometry.setAttribute('aMag', new THREE.Float32BufferAttribute(mags, 1));
+      geometry.setAttribute('aFlash', new THREE.Float32BufferAttribute(flashBoosts, 1));
 
       const shaderMaterial = new THREE.ShaderMaterial({
         uniforms: { 
@@ -670,25 +725,27 @@
           attribute float aSize;
           attribute float aOpacity;
           attribute float aMag;
+          attribute float aFlash;
           uniform float uFov;
           varying vec3 vColor;
           varying float vOpacity;
           
           void main() {
-            vColor = color;
+            // 発光時は白く輝く
+            vColor = mix(color, vec3(1.0, 1.0, 1.0), aFlash * 0.7);
             
-            // 広角（uFov=75）からズームイン（uFov=20）にかけて 0.0 -> 1.0 に変化
             float zoomFactor = smoothstep(75.0, 20.0, uFov);
 
-            // 5.0等星より暗い星は、ズームインした時に滑らかにフェードインして浮かび上がる
             if (aMag > 5.0) {
-              vOpacity = aOpacity * zoomFactor;
+              vOpacity = (aOpacity + aFlash * 0.5) * zoomFactor;
             } else {
-              vOpacity = aOpacity;
+              vOpacity = min(1.0, aOpacity + aFlash * 0.5);
             }
 
             vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-            gl_PointSize = aSize * (180.0 / -mvPosition.z);
+            // 音が鳴った一瞬だけ星のサイズを拡大させる
+            float currentSize = aSize * (1.0 + aFlash * 2.5);
+            gl_PointSize = currentSize * (180.0 / -mvPosition.z);
             gl_Position = projectionMatrix * mvPosition;
           }
         `,
@@ -751,7 +808,7 @@
 
       const radius = 98;
       getSolarSystemPositions(date).forEach(body => {
-        const pos = raDecToAltAz(body.ra, body.dec, userLat, userLon, date);
+        const pos = raDecToAltAz(body.ra, body.dec, date ? date : new Date());
         const vec = altAzToVector3(pos.alt, pos.az, radius);
 
         let baseSize = body.mag < -10 ? 3.5 : (body.mag < -2 ? 2.5 : 1.8);
@@ -773,6 +830,22 @@
 
       if (starMesh && starMesh.material.uniforms.uFov) {
         starMesh.material.uniforms.uFov.value = camera.fov;
+      }
+
+      // 星の一瞬の発光（Flash）アニメーションの減衰処理
+      if (starMesh && starMesh.geometry.attributes.aFlash) {
+        const flashArr = starMesh.geometry.attributes.aFlash.array;
+        let needsUpdate = false;
+        for (let i = 0; i < flashArr.length; i++) {
+          if (flashArr[i] > 0) {
+            flashArr[i] -= 0.05; // 徐々に消灯
+            if (flashArr[i] < 0) flashArr[i] = 0;
+            needsUpdate = true;
+          }
+        }
+        if (needsUpdate) {
+          starMesh.geometry.attributes.aFlash.needsUpdate = true;
+        }
       }
 
       if (nowTime - lastCalcTime > 10000) {
@@ -817,6 +890,185 @@
       }
     }
 
+    // --- 音声生成と星空演奏ロジック ---
+
+    function initAudioContext() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+    }
+
+    // サウンド生成（合成音色: カリンバ、ピアノ、シンセ）
+    function playStarSound(freq, volume) {
+      if (!audioCtx) return;
+
+      const osc = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+      const now = audioCtx.currentTime;
+
+      osc.frequency.setValueAtTime(freq, now);
+
+      if (currentTimbre === 'kalimba') {
+        // カリンバ風: 正弦波＋高域アタック成分＋オルゴール的な減衰
+        osc.type = 'sine';
+        
+        // 倍音用オシレータ（金属的な響き）
+        const overtone = audioCtx.createOscillator();
+        const overtoneGain = audioCtx.createGain();
+        overtone.type = 'triangle';
+        overtone.frequency.setValueAtTime(freq * 3.01, now); // 高次倍音
+        
+        overtoneGain.gain.setValueAtTime(volume * 0.15, now);
+        overtoneGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.3);
+        
+        overtone.connect(overtoneGain);
+        overtoneGain.connect(audioCtx.destination);
+        overtone.start(now);
+        overtone.stop(now + 0.3);
+
+        gainNode.gain.setValueAtTime(0.001, now);
+        gainNode.gain.linearRampToValueAtTime(volume * 0.4, now + 0.01);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 1.8);
+
+      } else if (currentTimbre === 'piano') {
+        // ピアノ風: 三角波メイン＋素早い減衰
+        osc.type = 'triangle';
+        gainNode.gain.setValueAtTime(0.001, now);
+        gainNode.gain.linearRampToValueAtTime(volume * 0.5, now + 0.02);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 1.2);
+
+      } else {
+        // シンセパッド風: サイン波＋ゆったりしたアタック＆リリース（入眠用）
+        osc.type = 'sine';
+        gainNode.gain.setValueAtTime(0.001, now);
+        gainNode.gain.linearRampToValueAtTime(volume * 0.3, now + 0.3);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 2.5);
+      }
+
+      osc.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+
+      osc.start(now);
+      osc.stop(now + (currentTimbre === 'synth' ? 2.5 : 1.8));
+    }
+
+    // 星の物理属性を「音」に変換する関数
+    function convertStarToSound(star) {
+      // 1. ボリューム (明るさ / 等級magに基づく): 明るい(mag小) => 大音量
+      // mag: -1.5 (激高) ~ 6.0 (暗い)
+      const normMag = Math.max(-1.5, Math.min(6.5, star.mag));
+      const volume = Math.pow(1.0 - (normMag + 1.5) / 8.0, 1.5) * 0.8 + 0.1;
+
+      // 2. 音の高さ (色 / B-V色指数bvに基づく): 赤い(bv高) => 低音, 青い(bv低) => 高音
+      // bv: -0.4 (青) ~ 1.8 (赤)
+      const bv = star.bv !== undefined ? star.bv : 0.4;
+      const clampedBv = Math.max(-0.3, Math.min(1.6, bv));
+      const colorRatio = 1.0 - (clampedBv + 0.3) / 1.9; // 0.0(赤:低音) ~ 1.0(青:高音)
+
+      // Fナチュラルマイナースケールのインデックス割り当て (28音階)
+      const scaleIndex = Math.floor(colorRatio * (fNaturalMinorScale.length - 1));
+      const freq = fNaturalMinorScale[scaleIndex];
+
+      return { freq, volume };
+    }
+
+    // 星を一時的に強く輝かせる
+    function triggerStarFlash(starIndex) {
+      if (!starMesh || !starMesh.geometry.attributes.aFlash) return;
+      const flashArr = starMesh.geometry.attributes.aFlash.array;
+      if (starIndex >= 0 && starIndex < flashArr.length) {
+        flashArr[starIndex] = 1.0;
+        starMesh.geometry.attributes.aFlash.needsUpdate = true;
+      }
+    }
+
+    // オルゴール演奏メイン処理
+    function toggleStarMusic() {
+      initAudioContext();
+      const musicBtn = document.getElementById('music-btn');
+
+      if (isPlayingMusic) {
+        // 停止処理
+        isPlayingMusic = false;
+        if (musicTimeoutId) clearTimeout(musicTimeoutId);
+        musicBtn.classList.remove('playing');
+        sensorEl.innerText = "モード: ジャイロ連動中";
+        return;
+      }
+
+      if (!starMesh || !realStarsData.length) return;
+
+      isPlayingMusic = true;
+      musicBtn.classList.add('playing');
+
+      // 1. 現在の画面（視界内）に映っている星を抽出してY座標（画面上の高さ）でソート
+      const visibleStars = [];
+      const projVec = new THREE.Vector3();
+      const posAttr = starMesh.geometry.attributes.position;
+
+      for (let i = 0; i < realStarsData.length; i++) {
+        projVec.fromBufferAttribute(posAttr, i);
+        projVec.project(camera); // スクリーン座標変換 (-1.0 ~ 1.0)
+
+        // 画面内に映っているかチェック
+        if (projVec.x >= -1.1 && projVec.x <= 1.1 && projVec.y >= -1.1 && projVec.y <= 1.1 && projVec.z < 1.0) {
+          visibleStars.push({
+            index: i,
+            screenY: projVec.y, // 上(1.0) から 下(-1.0)
+            starData: realStarsData[i]
+          });
+        }
+      }
+
+      if (visibleStars.length === 0) {
+        sensorEl.innerText = "オルゴール: 視界内に星がありません";
+        isPlayingMusic = false;
+        musicBtn.classList.remove('playing');
+        return;
+      }
+
+      // 画面の「上から順」にソート (screenYが大きい順)
+      visibleStars.sort((a, b) => b.screenY - a.screenY);
+
+      // 上限を50個程度に間引く（演奏が長くなりすぎないように）
+      const selectedStars = visibleStars.slice(0, 50);
+
+      sensorEl.innerText = `♪ 星空オルゴール演奏中 (${selectedStars.length}個の星)`;
+
+      // 2. 演奏シーケンスの実行
+      let currentIndex = 0;
+
+      function playNextStar() {
+        if (!isPlayingMusic || currentIndex >= selectedStars.length) {
+          isPlayingMusic = false;
+          musicBtn.classList.remove('playing');
+          sensorEl.innerText = "モード: ジャイロ連動中";
+          return;
+        }
+
+        const item = selectedStars[currentIndex];
+        const { freq, volume } = convertStarToSound(item.starData);
+
+        // 音の鳴動と視覚フィードバック（キラッと光る）
+        playStarSound(freq, volume);
+        triggerStarFlash(item.index);
+
+        currentIndex++;
+
+        // ゆったりとしたオルゴールリズム（200ms〜450ms間隔）
+        const delay = 220 + Math.random() * 200;
+        musicTimeoutId = setTimeout(playNextStar, delay);
+      }
+
+      playNextStar();
+    }
+
+
+    // --- UIイベント設定 ---
+
     const sidebar = document.getElementById('sidebar');
     const sidebarToggle = document.getElementById('sidebar-toggle');
     const toggleIcon = document.getElementById('toggle-icon');
@@ -827,6 +1079,16 @@
     const cityAccordionContent = document.getElementById('city-accordion-content');
     const accordionArrow = document.getElementById('accordion-arrow');
     const reloadBtn = document.getElementById('reload-btn');
+    const musicBtn = document.getElementById('music-btn');
+    const timbreSelect = document.getElementById('timbre-select');
+
+    musicBtn.addEventListener('click', () => {
+      toggleStarMusic();
+    });
+
+    timbreSelect.addEventListener('change', (e) => {
+      currentTimbre = e.target.value;
+    });
 
     sidebarToggle.addEventListener('click', () => {
       const isOpening = !sidebar.classList.contains('open');
@@ -897,6 +1159,7 @@
 
       window.addEventListener('click', () => {
         requestSensorPermission();
+        initAudioContext();
       }, { once: true });
     });
   </script>
