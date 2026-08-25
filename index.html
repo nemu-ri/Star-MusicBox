@@ -901,11 +901,10 @@
       }
     }
 
-    // サウンド生成（合成音色: カリンバ、ピアノ、シンセ）
+    // サウンド生成（修正版: 演奏完了後にノードを解放してメモリ詰まりを防止）
     function playStarSound(freq, volume) {
       if (!audioCtx) return;
 
-      // ブラウザの自動停止ポリシー対策：毎音再生時にサスペンド解除をリトライ
       if (audioCtx.state === 'suspended') {
         audioCtx.resume();
       }
@@ -913,40 +912,45 @@
       const osc = audioCtx.createOscillator();
       const gainNode = audioCtx.createGain();
       const now = audioCtx.currentTime;
+      const duration = currentTimbre === 'synth' ? 2.5 : 1.8;
 
       osc.frequency.setValueAtTime(freq, now);
 
       if (currentTimbre === 'kalimba') {
-        // カリンバ風: 正弦波＋高域アタック成分＋オルゴール的な減衰
         osc.type = 'sine';
         
-        // 倍音用オシレータ（金属的な響き）
+        // 倍音用オシレータ
         const overtone = audioCtx.createOscillator();
         const overtoneGain = audioCtx.createGain();
         overtone.type = 'triangle';
-        overtone.frequency.setValueAtTime(freq * 3.01, now); // 高次倍音
+        overtone.frequency.setValueAtTime(freq * 3.01, now);
         
         overtoneGain.gain.setValueAtTime(volume * 0.15, now);
         overtoneGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.3);
         
         overtone.connect(overtoneGain);
         overtoneGain.connect(audioCtx.destination);
+        
         overtone.start(now);
         overtone.stop(now + 0.3);
+
+        // 使用が終わった倍音ノードを切断して解放
+        setTimeout(() => {
+          overtone.disconnect();
+          overtoneGain.disconnect();
+        }, 350);
 
         gainNode.gain.setValueAtTime(0.001, now);
         gainNode.gain.linearRampToValueAtTime(volume * 0.4, now + 0.01);
         gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 1.8);
 
       } else if (currentTimbre === 'piano') {
-        // ピアノ風: 三角波メイン＋素早い減衰
         osc.type = 'triangle';
         gainNode.gain.setValueAtTime(0.001, now);
         gainNode.gain.linearRampToValueAtTime(volume * 0.5, now + 0.02);
         gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 1.2);
 
       } else {
-        // シンセパッド風: サイン波＋ゆったりしたアタック＆リリース（入眠用）
         osc.type = 'sine';
         gainNode.gain.setValueAtTime(0.001, now);
         gainNode.gain.linearRampToValueAtTime(volume * 0.3, now + 0.3);
@@ -957,18 +961,22 @@
       gainNode.connect(audioCtx.destination);
 
       osc.start(now);
-      osc.stop(now + (currentTimbre === 'synth' ? 2.5 : 1.8));
+      osc.stop(now + duration);
+
+      // 音が消えたらノードを切断してメモリ解放（12音程度で止まる問題を解消）
+      setTimeout(() => {
+        osc.disconnect();
+        gainNode.disconnect();
+      }, (duration + 0.1) * 1000);
     }
 
     // 星の物理属性を「音」に変換する関数
     function convertStarToSound(star) {
       // 1. ボリューム (明るさ / 等級magに基づく): 明るい(mag小) => 大音量
-      // mag: -1.5 (激高) ~ 6.0 (暗い)
       const normMag = Math.max(-1.5, Math.min(6.5, star.mag));
       const volume = Math.pow(1.0 - (normMag + 1.5) / 8.0, 1.5) * 0.8 + 0.1;
 
       // 2. 音の高さ (色 / B-V色指数bvに基づく): 赤い(bv高) => 低音, 青い(bv低) => 高音
-      // bv: -0.4 (青) ~ 1.8 (赤)
       const bv = star.bv !== undefined ? star.bv : 0.4;
       const clampedBv = Math.max(-0.3, Math.min(1.6, bv));
       const colorRatio = 1.0 - (clampedBv + 0.3) / 1.9; // 0.0(赤:低音) ~ 1.0(青:高音)
@@ -1038,7 +1046,7 @@
       // 画面の「上から順」にソート (screenYが大きい順)
       visibleStars.sort((a, b) => b.screenY - a.screenY);
 
-      // 上限を50個程度に間引く（演奏が長くなりすぎないように）
+      // 上限を50個程度に間引く
       const selectedStars = visibleStars.slice(0, 50);
 
       sensorEl.innerText = `♪ 星空オルゴール演奏中 (${selectedStars.length}個の星)`;
