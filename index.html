@@ -80,7 +80,7 @@
 
   <div id="info">
     <div id="location-info">観測地: 現在地を取得中...</div>
-    <div id="sensor-info">モード: 画面タップでセンサー起動</div>
+    <div id="sensor-info">モード: 画面タップで方位固定・連動</div>
   </div>
 
   <button id="reload-btn">
@@ -140,13 +140,11 @@
     let solarSystemGroup = new THREE.Group();
     let constellationGroup = new THREE.Group();
     let lastCalcTime = 0;
-    let isCompassSynced = false;
 
     let deviceAlpha = 0, deviceBeta = 0, deviceGamma = 0;
-    let lockedAlpha = 0; 
+    let headingOffset = 0; 
+    let isHeadingInitialized = false;
     let screenOrientation = window.orientation || 0;
-
-    const LOCK_THRESHOLD_PITCH = 70; 
 
     const cities = [
       { name: "東京", lat: 35.6812, lon: 139.7671 },
@@ -163,7 +161,6 @@
       { name: "ホノルル", lat: 21.3069, lon: -157.8583 }
     ];
 
-    // 明るい場所でも目立つように光の芯を強調したスターテクスチャ
     function createStarTexture() {
       const canvas = document.createElement('canvas');
       canvas.width = 128; canvas.height = 128;
@@ -423,26 +420,26 @@
         let beta = e.beta || 0;
         let gamma = e.gamma || 0;
 
-        if (e.webkitCompassHeading !== undefined && e.webkitCompassHeading !== null) {
-          alpha = 360 - e.webkitCompassHeading;
-        } else if (e.absolute && e.alpha !== null) {
-          alpha = e.alpha;
+        // アクセス時（または再取得時）の初回のみコンパス値からオフセット値を計算して固定
+        if (!isHeadingInitialized) {
+          let compassHeading = null;
+          if (e.webkitCompassHeading !== undefined && e.webkitCompassHeading !== null) {
+            compassHeading = 360 - e.webkitCompassHeading;
+          } else if (e.absolute && e.alpha !== null) {
+            compassHeading = e.alpha;
+          }
+
+          if (compassHeading !== null) {
+            headingOffset = compassHeading - alpha;
+            isHeadingInitialized = true;
+            sensorEl.innerText = "モード: 初期方位を固定・スムーズジャイロ追従中";
+          }
         }
 
+        // 追従中は計算したオフセットを足すことでガクつきを防ぎ連続回転
+        deviceAlpha = alpha + headingOffset;
         deviceBeta = beta;
         deviceGamma = gamma;
-
-        if (Math.abs(beta) < LOCK_THRESHOLD_PITCH) {
-          deviceAlpha = alpha;
-          lockedAlpha = alpha; 
-        } else {
-          deviceAlpha = lockedAlpha;
-        }
-
-        if (!isCompassSynced && (e.webkitCompassHeading !== undefined || e.absolute)) {
-          isCompassSynced = true;
-          sensorEl.innerText = "モード: リアルタイム絶対方位同期中";
-        }
       };
 
       window.addEventListener('deviceorientationabsolute', handleOrientation, true);
@@ -484,7 +481,7 @@
       if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
         DeviceOrientationEvent.requestPermission().then(state => {
           if (state === 'granted') {
-            sensorEl.innerText = "モード: センサー連動中";
+            sensorEl.innerText = "モード: ジャイロ連動中";
           }
         }).catch(() => {});
       }
@@ -507,7 +504,6 @@
         const c = star.color;
         colors.push(c.r, c.g, c.b);
 
-        // ★【調整ポイント】明るい場所でも見やすいよう、星のサイズを全体的に大きく底上げ
         const normMag = Math.max(-1.5, Math.min(6.5, star.mag));
         const magRatio = 1.0 - (normMag + 1.5) / 8.0;
         sizes.push(3.0 + Math.pow(magRatio, 2.0) * 15.0);
@@ -557,7 +553,6 @@
       if (!showConstellations || !constellationLinesData.length) return;
 
       const radius = 99;
-      // ★【調整ポイント】星座線の色を明るくし、透過度を上げて見やすく調整
       const lineMaterial = new THREE.LineBasicMaterial({ color: 0x5599ff, transparent: true, opacity: 0.5 });
 
       constellationLinesData.forEach(feature => {
@@ -664,10 +659,11 @@
       }
     });
 
+    // 「方角・位置を再取得」を押した時に方位をリセットしてコンパスから再キャリブレーション
     reloadBtn.addEventListener('click', () => {
       fetchCurrentLocation();
-      isCompassSynced = false;
-      sensorEl.innerText = "モード: 方角を再同期中...";
+      isHeadingInitialized = false;
+      sensorEl.innerText = "モード: 方角を再取得中...";
     });
 
     manualToggle.addEventListener('change', (e) => {
@@ -677,7 +673,7 @@
         camera.quaternion.set(0, 0, 0, 1);
         sensorEl.innerText = "モード: 手動ドラッグ";
       } else {
-        sensorEl.innerText = "モード: センサー連動中";
+        sensorEl.innerText = "モード: ジャイロ連動中";
       }
     });
 
