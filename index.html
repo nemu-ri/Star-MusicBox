@@ -158,7 +158,6 @@
     <div class="setting-item">
       <span>星座線を表示</span>
       <label class="switch">
-        <!-- 初期状態をオフに変更 -->
         <input type="checkbox" id="constellation-toggle">
         <span class="slider"></span>
       </label>
@@ -186,7 +185,7 @@
     const sensorEl = document.getElementById('sensor-info');
 
     let isManualMode = false;
-    let showConstellations = false; // 初期値をオフに変更
+    let showConstellations = false;
     let realStarsData = [];
     let constellationLinesData = [];
     let constellationPointsList = [];
@@ -202,10 +201,12 @@
     let initialPinchDistance = null;
     let initialFov = 75;
 
-    // 音声 & 画面固定用フラグ
+    // 音声 & スケジューラー用管理変数
     let audioCtx = null;
     let isPlayingMusic = false;
-    let activeNodes = [];
+    let bgmIntervalId = null;
+    let starSequenceIndex = 0;
+    let currentVisibleStars = [];
     let activeTimeouts = [];
     let currentTimbre = 'kalimba';
 
@@ -896,7 +897,7 @@
       }
     }
 
-    // --- 音声生成と星空演奏ロジック（高精度タイムライン制御） ---
+    // --- 音声生成とBGMスケジューラー ---
 
     function initAudioContext() {
       if (!audioCtx) {
@@ -912,26 +913,25 @@
 
       const osc = audioCtx.createOscillator();
       const gainNode = audioCtx.createGain();
-      const duration = currentTimbre === 'synth' ? 2.2 : 1.5;
+      const duration = currentTimbre === 'synth' ? 2.5 : 1.8;
 
       osc.frequency.setValueAtTime(freq, startTime);
 
-      // ビブラート・残響の違和感を抑えた自然なエンベロープ設計
       if (currentTimbre === 'kalimba') {
         osc.type = 'sine';
         gainNode.gain.setValueAtTime(0.0001, startTime);
-        gainNode.gain.linearRampToValueAtTime(volume * 0.4, startTime + 0.005);
-        gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + 1.2);
+        gainNode.gain.linearRampToValueAtTime(volume * 0.35, startTime + 0.005);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + 1.5);
       } else if (currentTimbre === 'piano') {
         osc.type = 'triangle';
         gainNode.gain.setValueAtTime(0.0001, startTime);
-        gainNode.gain.linearRampToValueAtTime(volume * 0.5, startTime + 0.01);
-        gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + 1.0);
+        gainNode.gain.linearRampToValueAtTime(volume * 0.45, startTime + 0.01);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + 1.2);
       } else {
         osc.type = 'sine';
         gainNode.gain.setValueAtTime(0.0001, startTime);
-        gainNode.gain.linearRampToValueAtTime(volume * 0.3, startTime + 0.15);
-        gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + 2.2);
+        gainNode.gain.linearRampToValueAtTime(volume * 0.25, startTime + 0.2);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + 2.5);
       }
 
       osc.connect(gainNode);
@@ -940,7 +940,10 @@
       osc.start(startTime);
       osc.stop(startTime + duration);
 
-      activeNodes.push(osc, gainNode);
+      osc.onended = () => {
+        osc.disconnect();
+        gainNode.disconnect();
+      };
     }
 
     function convertStarToSound(star) {
@@ -973,25 +976,116 @@
       starMesh.geometry.attributes.aFlash.needsUpdate = true;
     }
 
+    function updateVisibleStars() {
+      if (!starMesh || !realStarsData.length) return [];
+
+      const projVec = new THREE.Vector3();
+      const posAttr = starMesh.geometry.attributes.position;
+      const stars = [];
+
+      for (let i = 0; i < realStarsData.length; i++) {
+        projVec.fromBufferAttribute(posAttr, i);
+        projVec.project(camera);
+
+        if (projVec.x >= -1.0 && projVec.x <= 1.0 && projVec.y >= -1.0 && projVec.y <= 1.0 && projVec.z < 1.0) {
+          stars.push({
+            index: i,
+            screenY: projVec.y,
+            starData: realStarsData[i]
+          });
+        }
+      }
+
+      stars.sort((a, b) => b.screenY - a.screenY);
+      return stars;
+    }
+
     function stopMusicPlayback() {
       isPlayingMusic = false;
-      const musicBtn = document.getElementById('music-btn');
-      musicBtn.classList.remove('playing');
 
+      if (bgmIntervalId) {
+        clearInterval(bgmIntervalId);
+        bgmIntervalId = null;
+      }
       activeTimeouts.forEach(id => clearTimeout(id));
       activeTimeouts = [];
 
-      activeNodes.forEach(node => {
-        try {
-          if (node.stop) node.stop();
-          node.disconnect();
-        } catch(e) {}
-      });
-      activeNodes = [];
+      const musicBtn = document.getElementById('music-btn');
+      if (musicBtn) musicBtn.classList.remove('playing');
 
       resetFlashBoosts();
-      sensorEl.innerText = isManualMode ? "モード: 手動ドラッグ操作中" : "モード: ジャイロ連動中";
-      if (isManualMode) orbitControls.enabled = true;
+
+      if (sensorEl) {
+        sensorEl.innerText = isManualMode ? "モード: 手動ドラッグ操作中" : "モード: ジャイロ連動中";
+      }
+
+      // カメラコントロールをモードに合わせて復帰＆強制リセット
+      if (orbitControls) {
+        orbitControls.enabled = isManualMode;
+        orbitControls.update();
+      }
+    }
+
+    function startBgmScheduler() {
+      currentVisibleStars = updateVisibleStars();
+      if (currentVisibleStars.length === 0) {
+        if (sensorEl) sensorEl.innerText = "オルゴール: 視界内に星がありません";
+        stopMusicPlayback();
+        return;
+      }
+
+      starSequenceIndex = 0;
+      let nextNoteTime = audioCtx.currentTime + 0.1;
+
+      bgmIntervalId = setInterval(() => {
+        if (!isPlayingMusic) return;
+
+        const freshStars = updateVisibleStars();
+        if (freshStars.length > 0) {
+          currentVisibleStars = freshStars;
+        }
+
+        while (nextNoteTime < audioCtx.currentTime + 1.2) {
+          if (starSequenceIndex >= currentVisibleStars.length) {
+            starSequenceIndex = 0;
+          }
+
+          const currentItem = currentVisibleStars[starSequenceIndex];
+          if (!currentItem) break;
+
+          const chordGroup = [currentItem];
+          let nextIdx = (starSequenceIndex + 1) % currentVisibleStars.length;
+
+          while (
+            chordGroup.length < 3 && 
+            nextIdx !== starSequenceIndex &&
+            currentVisibleStars[nextIdx] &&
+            Math.abs(currentVisibleStars[nextIdx].screenY - currentItem.screenY) < 0.02
+          ) {
+            chordGroup.push(currentVisibleStars[nextIdx]);
+            nextIdx = (nextIdx + 1) % currentVisibleStars.length;
+          }
+
+          const volMultiplier = chordGroup.length > 1 ? 0.7 : 1.0;
+          chordGroup.forEach(item => {
+            const { freq, volume } = convertStarToSound(item.starData);
+            scheduleStarSound(freq, volume * volMultiplier, nextNoteTime);
+
+            const delayMs = Math.max(0, (nextNoteTime - audioCtx.currentTime) * 1000);
+            const tid = setTimeout(() => {
+              if (isPlayingMusic) triggerStarFlash(item.index);
+            }, delayMs);
+            activeTimeouts.push(tid);
+          });
+
+          starSequenceIndex = (starSequenceIndex + chordGroup.length) % currentVisibleStars.length;
+          nextNoteTime += 0.25 + Math.random() * 0.3;
+        }
+
+        if (activeTimeouts.length > 60) {
+          activeTimeouts = activeTimeouts.slice(-20);
+        }
+      }, 100);
     }
 
     function toggleStarMusic() {
@@ -1007,63 +1101,18 @@
       if (!starMesh || !realStarsData.length) return;
 
       isPlayingMusic = true;
+
       const musicBtn = document.getElementById('music-btn');
-      musicBtn.classList.add('playing');
-      if (isManualMode) orbitControls.enabled = false;
+      if (musicBtn) musicBtn.classList.add('playing');
 
-      const visibleStars = [];
-      const projVec = new THREE.Vector3();
-      const posAttr = starMesh.geometry.attributes.position;
+      if (orbitControls) orbitControls.enabled = false;
 
-      for (let i = 0; i < realStarsData.length; i++) {
-        projVec.fromBufferAttribute(posAttr, i);
-        projVec.project(camera);
-
-        if (projVec.x >= -1.0 && projVec.x <= 1.0 && projVec.y >= -1.0 && projVec.y <= 1.0 && projVec.z < 1.0) {
-          visibleStars.push({
-            index: i,
-            screenY: projVec.y,
-            starData: realStarsData[i]
-          });
-        }
+      if (sensorEl) {
+        sensorEl.innerText = `♪ シームレスBGM再生中（タップで停止）`;
       }
 
-      if (visibleStars.length === 0) {
-        sensorEl.innerText = "オルゴール: 視界内に星がありません";
-        stopMusicPlayback();
-        return;
-      }
-
-      visibleStars.sort((a, b) => b.screenY - a.screenY);
-
-      sensorEl.innerText = `♪ 画面固定中：演奏中 (${visibleStars.length}個の星)`;
-
-      const startTime = audioCtx.currentTime + 0.1;
-      let accumulatedDelay = 0;
-
-      // すべての表示されている星に対して途切れずスケジュールを設定
-      visibleStars.forEach((item, idx) => {
-        const { freq, volume } = convertStarToSound(item.starData);
-        const noteTime = startTime + accumulatedDelay;
-
-        scheduleStarSound(freq, volume, noteTime);
-
-        const timeoutDelay = (noteTime - audioCtx.currentTime) * 1000;
-        const tid = setTimeout(() => {
-          if (isPlayingMusic) triggerStarFlash(item.index);
-        }, Math.max(0, timeoutDelay));
-        activeTimeouts.push(tid);
-
-        accumulatedDelay += 0.16 + Math.random() * 0.14;
-      });
-
-      const totalDuration = (accumulatedDelay + 1.5) * 1000;
-      const endTid = setTimeout(() => {
-        if (isPlayingMusic) stopMusicPlayback();
-      }, totalDuration);
-      activeTimeouts.push(endTid);
+      startBgmScheduler();
     }
-
 
     // --- UIイベント設定 ---
 
