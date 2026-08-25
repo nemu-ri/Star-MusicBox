@@ -442,12 +442,6 @@
       renderer.setSize(width, height);
     }
 
-    function updateStarFovUniform() {
-      if (starMesh && starMesh.material.uniforms.uFov) {
-        starMesh.material.uniforms.uFov.value = camera.fov;
-      }
-    }
-
     function setupZoomControls() {
       const dom = renderer.domElement;
 
@@ -470,7 +464,6 @@
           const factor = initialPinchDistance / currentDistance;
           camera.fov = Math.max(20, Math.min(100, initialFov * factor));
           camera.updateProjectionMatrix();
-          updateStarFovUniform();
         }
       }, { passive: true });
 
@@ -485,7 +478,6 @@
         const zoomSpeed = 0.05;
         camera.fov = Math.max(20, Math.min(100, camera.fov + e.deltaY * zoomSpeed));
         camera.updateProjectionMatrix();
-        updateStarFovUniform();
       }, { passive: false });
     }
 
@@ -670,8 +662,7 @@
 
       const shaderMaterial = new THREE.ShaderMaterial({
         uniforms: { 
-          pointTexture: { value: createStarTexture() },
-          uFov: { value: camera.fov }
+          pointTexture: { value: createStarTexture() }
         },
         vertexShader: `
           attribute float aSize;
@@ -679,20 +670,16 @@
           attribute float aMag;
           varying vec3 vColor;
           varying float vOpacity;
-          uniform float uFov;
           
           void main() {
             vColor = color;
             
-            // FOVが広がる（ズームアウト）に従って見せる星の限界等級を下げる
-            // FOV 30(ズームイン): 6.8等星まで表示
-            // FOV 95(ズームアウト): 3.2等星以上の明るい星のみ表示
-            float magCutoff = mix(6.8, 3.2, smoothstep(30.0, 95.0, uFov));
-            
-            // aMag <= magCutoff - 1.0 : 不透明度100%保持
-            // aMag >= magCutoff : 完全フェードアウト（1.0 -> 0.0）
-            float fadeFactor = 1.0 - smoothstep(magCutoff - 1.0, magCutoff, aMag);
-            vOpacity = aOpacity * fadeFactor;
+            // 6.8等星以下の星をすべて常時表示（画角依存の動的フェード処理を削除）
+            if (aMag > 6.8) {
+              vOpacity = 0.0;
+            } else {
+              vOpacity = aOpacity;
+            }
 
             vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
             gl_PointSize = aSize * (180.0 / -mvPosition.z);
