@@ -214,8 +214,9 @@
 
     async function loadRealStarCatalog() {
       try {
+        // 8等星データ（stars.8.json: 約4万個）へ変更
         const [starsRes, constRes] = await Promise.all([
-          fetch('https://cdn.jsdelivr.net/gh/ofrohn/d3-celestial@master/data/stars.6.json'),
+          fetch('https://cdn.jsdelivr.net/gh/ofrohn/d3-celestial@master/data/stars.8.json'),
           fetch('https://cdn.jsdelivr.net/gh/ofrohn/d3-celestial@master/data/constellations.lines.json')
         ]);
         
@@ -442,6 +443,12 @@
       renderer.setSize(width, height);
     }
 
+    function updateStarFovUniform() {
+      if (starMesh && starMesh.material.uniforms.uFov) {
+        starMesh.material.uniforms.uFov.value = camera.fov;
+      }
+    }
+
     function setupZoomControls() {
       const dom = renderer.domElement;
 
@@ -464,6 +471,7 @@
           const factor = initialPinchDistance / currentDistance;
           camera.fov = Math.max(20, Math.min(100, initialFov * factor));
           camera.updateProjectionMatrix();
+          updateStarFovUniform();
         }
       }, { passive: true });
 
@@ -478,6 +486,7 @@
         const zoomSpeed = 0.05;
         camera.fov = Math.max(20, Math.min(100, camera.fov + e.deltaY * zoomSpeed));
         camera.updateProjectionMatrix();
+        updateStarFovUniform();
       }, { passive: false });
     }
 
@@ -605,7 +614,7 @@
         [ 1.0, 12.5],
         [ 2.0,  8.25],
         [ 3.0,  4.5],
-        [ 6.5,  2.8]
+        [ 8.0,  2.0]
       ];
 
       if (mag <= table[0][0]) return table[0][1];
@@ -619,7 +628,7 @@
           return s1 + t * (s2 - s1);
         }
       }
-      return 2.8;
+      return 2.0;
     }
 
     function buildRealStarField() {
@@ -642,9 +651,9 @@
         const starSize = getExactStarSize(star.mag, star.isConstellationStar);
         sizes.push(starSize);
 
-        const normMag = Math.max(-1.5, Math.min(6.5, star.mag));
-        const magRatio = 1.0 - (normMag + 1.5) / 8.0;
-        let baseOpacity = 0.60 + Math.pow(magRatio, 1.5) * 0.40;
+        const normMag = Math.max(-1.5, Math.min(8.0, star.mag));
+        const magRatio = 1.0 - (normMag + 1.5) / 9.5;
+        let baseOpacity = 0.50 + Math.pow(magRatio, 1.5) * 0.50;
 
         if (star.isConstellationStar) {
           baseOpacity = Math.min(1.0, baseOpacity + 0.05);
@@ -662,7 +671,8 @@
 
       const shaderMaterial = new THREE.ShaderMaterial({
         uniforms: { 
-          pointTexture: { value: createStarTexture() }
+          pointTexture: { value: createStarTexture() },
+          uFov: { value: camera.fov }
         },
         vertexShader: `
           attribute float aSize;
@@ -670,16 +680,19 @@
           attribute float aMag;
           varying vec3 vColor;
           varying float vOpacity;
+          uniform float uFov;
           
           void main() {
             vColor = color;
             
-            // 6.8等星以下の星をすべて常時表示（画角依存の動的フェード処理を削除）
-            if (aMag > 6.8) {
-              vOpacity = 0.0;
-            } else {
-              vOpacity = aOpacity;
-            }
+            // FOV（画角）に応じて見せる星の上限等級（magCutoff）を無段階補間
+            // FOV 20.0 (ズームイン時) : 8.5 等星まで可視化
+            // FOV 90.0 (ズームアウト時): 3.5 等星以上の明るい星のみ残す
+            float magCutoff = mix(8.5, 3.5, smoothstep(20.0, 90.0, uFov));
+            
+            // カットオフ付近の星を滑らかにフェードアウト（smoothstepによるアルファ制御）
+            float fadeFactor = 1.0 - smoothstep(magCutoff - 1.2, magCutoff, aMag);
+            vOpacity = aOpacity * fadeFactor;
 
             vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
             gl_PointSize = aSize * (180.0 / -mvPosition.z);
