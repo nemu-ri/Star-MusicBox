@@ -149,7 +149,7 @@
     let showConstellations = true;
     let realStarsData = [];
     let constellationLinesData = [];
-    let constellationStarKeys = new Set();
+    let constellationPointsList = [];
     let solarSystemGroup = new THREE.Group();
     let constellationGroup = new THREE.Group();
     let lastCalcTime = 0;
@@ -224,20 +224,36 @@
 
         constellationLinesData = constData.features;
 
-        constellationStarKeys.clear();
+        // 星座線のすべての端点・頂点座標をリスト化
+        constellationPointsList = [];
         constellationLinesData.forEach(feature => {
           const geometry = feature.geometry;
           const lines = geometry.type === 'MultiLineString' ? geometry.coordinates : [geometry.coordinates];
           lines.forEach(line => {
             line.forEach(pt => {
-              const key = `${pt[0].toFixed(1)},${pt[1].toFixed(1)}`;
-              constellationStarKeys.add(key);
+              const ra = pt[0] / 15;
+              const dec = pt[1];
+              constellationPointsList.push({ ra, dec });
             });
           });
         });
 
+        // 距離判定により「星座線に含まれる星」を柔軟に検出する関数
+        const isPointNearConstellation = (ra, dec) => {
+          for (let i = 0; i < constellationPointsList.length; i++) {
+            const pt = constellationPointsList[i];
+            const dRa = (ra - pt.ra) * 15 * Math.cos(dec * Math.PI / 180);
+            const dDec = dec - pt.dec;
+            const dist = Math.sqrt(dRa * dRa + dDec * dDec);
+            if (dist < 0.8) return true; // 0.8度以内の誤差を許容
+          }
+          return false;
+        };
+
         realStarsData = starsData.features.map(f => {
           const coords = f.geometry.coordinates;
+          const ra = coords[0] / 15;
+          const dec = coords[1];
           const mag = f.properties.mag;
           const bv = f.properties.bv || 0.4;
 
@@ -248,10 +264,9 @@
           else if (bv < 1.2) color.setHex(0xffdd85);
           else color.setHex(0xffa050);
 
-          const starKey = `${coords[0].toFixed(1)},${coords[1].toFixed(1)}`;
-          const isConstellationStar = constellationStarKeys.has(starKey);
+          const isConstellationStar = isPointNearConstellation(ra, dec);
 
-          return { ra: coords[0] / 15, dec: coords[1], mag: mag, color: color, isConstellationStar: isConstellationStar };
+          return { ra, dec, mag, color, isConstellationStar };
         });
 
         buildRealStarField();
@@ -474,8 +489,6 @@
 
       scene = new THREE.Scene();
       camera = new THREE.PerspectiveCamera(75, initialWidth / initialHeight, 0.1, 1000);
-      
-      // カメラを僅かに原点から離す（回転軸を作る）
       camera.position.set(0, 0, 0.1);
 
       renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -486,7 +499,7 @@
       orbitControls = new THREE.OrbitControls(camera, renderer.domElement);
       orbitControls.enableZoom = false;
       orbitControls.enablePan = false;
-      orbitControls.rotateSpeed = -0.5; // 内側視点での反転補正
+      orbitControls.rotateSpeed = -0.5;
       orbitControls.target.set(0, 0, 0);
       orbitControls.enabled = false;
 
@@ -815,7 +828,6 @@
       isManualMode = e.target.checked;
       orbitControls.enabled = isManualMode;
       if (isManualMode) {
-        // カメラ位置のオフセット設定（原点固定回避）
         const dir = new THREE.Vector3();
         camera.getWorldDirection(dir);
         camera.position.copy(dir.multiplyScalar(-0.1));
