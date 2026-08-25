@@ -475,7 +475,7 @@
       scene = new THREE.Scene();
       camera = new THREE.PerspectiveCamera(75, initialWidth / initialHeight, 0.1, 1000);
       
-      // 原点から離れた位置に設定し、中心(0,0,0)を向くように設定
+      // カメラを僅かに原点から離す（回転軸を作る）
       camera.position.set(0, 0, 0.1);
 
       renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -486,9 +486,7 @@
       orbitControls = new THREE.OrbitControls(camera, renderer.domElement);
       orbitControls.enableZoom = false;
       orbitControls.enablePan = false;
-      
-      // 【ポイント】内側から球体を見渡すように反転設定
-      orbitControls.rotateSpeed = -0.5; 
+      orbitControls.rotateSpeed = -0.5; // 内側視点での反転補正
       orbitControls.target.set(0, 0, 0);
       orbitControls.enabled = false;
 
@@ -817,8 +815,10 @@
       isManualMode = e.target.checked;
       orbitControls.enabled = isManualMode;
       if (isManualMode) {
-        // 設定切り替え時の状態リセット処理
-        camera.position.set(0, 0, 0.1);
+        // カメラ位置のオフセット設定（原点固定回避）
+        const dir = new THREE.Vector3();
+        camera.getWorldDirection(dir);
+        camera.position.copy(dir.multiplyScalar(-0.1));
         orbitControls.target.set(0, 0, 0);
         orbitControls.update();
         sensorEl.innerText = "モード: 手動ドラッグ操作中";
