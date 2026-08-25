@@ -161,28 +161,43 @@
       { name: "ホノルル", lat: 21.3069, lon: -157.8583 }
     ];
 
+    // --- 【修正】高解像度 ＋ 十字フレア表現のテクスチャ ---
     function createStarTexture() {
       const canvas = document.createElement('canvas');
-      canvas.width = 128; canvas.height = 128;
+      canvas.width = 256; 
+      canvas.height = 256;
       const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, 128, 128);
+      ctx.clearRect(0, 0, 256, 256);
 
-      const coreGrad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
-      coreGrad.addColorStop(0.0, 'rgba(255,255,255,1.0)');
-      coreGrad.addColorStop(0.1, 'rgba(255,255,255,1.0)');
-      coreGrad.addColorStop(0.25, 'rgba(255,255,255,0.7)');
-      coreGrad.addColorStop(0.5, 'rgba(255,255,255,0.2)');
-      coreGrad.addColorStop(1.0, 'rgba(255,255,255,0.0)');
-
+      // 1. 中心の光（コア）
+      const coreGrad = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+      coreGrad.addColorStop(0.0, 'rgba(255, 255, 255, 1.0)');
+      coreGrad.addColorStop(0.08, 'rgba(255, 255, 255, 0.95)');
+      coreGrad.addColorStop(0.25, 'rgba(255, 240, 210, 0.35)');
+      coreGrad.addColorStop(0.55, 'rgba(255, 210, 160, 0.08)');
+      coreGrad.addColorStop(1.0, 'rgba(0, 0, 0, 0.0)');
       ctx.fillStyle = coreGrad;
-      ctx.beginPath(); ctx.arc(64, 64, 64, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); 
+      ctx.arc(128, 128, 128, 0, Math.PI * 2); 
+      ctx.fill();
 
-      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-      ctx.lineWidth = 2.2;
-      ctx.beginPath();
-      ctx.moveTo(64, 12); ctx.lineTo(64, 116);
-      ctx.moveTo(12, 64); ctx.lineTo(116, 64);
-      ctx.stroke();
+      // 2. 十字のレンズフレア（光条）
+      const flareGrad = ctx.createLinearGradient(0, 128, 256, 128);
+      flareGrad.addColorStop(0.0, 'rgba(255, 255, 255, 0)');
+      flareGrad.addColorStop(0.5, 'rgba(255, 245, 220, 0.6)');
+      flareGrad.addColorStop(1.0, 'rgba(255, 255, 255, 0)');
+
+      ctx.fillStyle = flareGrad;
+      // 横方向
+      ctx.fillRect(0, 126, 256, 4);
+
+      // 縦方向
+      ctx.save();
+      ctx.translate(128, 128);
+      ctx.rotate(Math.PI / 2);
+      ctx.translate(-128, -128);
+      ctx.fillRect(0, 126, 256, 4);
+      ctx.restore();
 
       return new THREE.CanvasTexture(canvas);
     }
@@ -420,7 +435,6 @@
         let beta = e.beta || 0;
         let gamma = e.gamma || 0;
 
-        // アクセス時（または再取得時）の初回のみコンパス値からオフセット値を計算して固定
         if (!isHeadingInitialized) {
           let compassHeading = null;
           if (e.webkitCompassHeading !== undefined && e.webkitCompassHeading !== null) {
@@ -436,7 +450,6 @@
           }
         }
 
-        // 追従中は計算したオフセットを足すことでガクつきを防ぎ連続回転
         deviceAlpha = alpha + headingOffset;
         deviceBeta = beta;
         deviceGamma = gamma;
@@ -487,12 +500,13 @@
       }
     }
 
+    // --- 【修正】シェーダーとコントラスト計算の最適化 ---
     function buildRealStarField() {
       if (!realStarsData.length) return;
       if (starMesh) scene.remove(starMesh);
 
       const geometry = new THREE.BufferGeometry();
-      const positions = [], colors = [], sizes = [];
+      const positions = [], colors = [], sizes = [], opacities = [];
       const now = new Date();
       const radius = 100;
 
@@ -504,22 +518,36 @@
         const c = star.color;
         colors.push(c.r, c.g, c.b);
 
+        // 明るさの正規化 (-1.5 〜 6.5)
         const normMag = Math.max(-1.5, Math.min(6.5, star.mag));
         const magRatio = 1.0 - (normMag + 1.5) / 8.0;
-        sizes.push(3.0 + Math.pow(magRatio, 2.0) * 15.0);
+
+        // 4乗の指数計算で上位の明るい星だけを強烈に拡大
+        const brightFactor = Math.pow(magRatio, 4.0);
+
+        // 暗い星は 1.4px で繊細に、超明るい星は 26px でフレアを魅せる
+        sizes.push(1.4 + brightFactor * 24.6);
+
+        // 暗い星も 0.38 確保して密度のスカスカ感を防ぐ
+        opacities.push(0.38 + Math.pow(magRatio, 1.8) * 0.62);
       });
 
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
       geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
       geometry.setAttribute('aSize', new THREE.Float32BufferAttribute(sizes, 1));
+      geometry.setAttribute('aOpacity', new THREE.Float32BufferAttribute(opacities, 1));
 
       const shaderMaterial = new THREE.ShaderMaterial({
         uniforms: { pointTexture: { value: createStarTexture() } },
         vertexShader: `
           attribute float aSize;
+          attribute float aOpacity;
           varying vec3 vColor;
+          varying float vOpacity;
+          
           void main() {
             vColor = color;
+            vOpacity = aOpacity;
             vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
             gl_PointSize = aSize * (180.0 / -mvPosition.z);
             gl_Position = projectionMatrix * mvPosition;
@@ -528,9 +556,11 @@
         fragmentShader: `
           uniform sampler2D pointTexture;
           varying vec3 vColor;
+          varying float vOpacity;
+          
           void main() {
             vec4 texColor = texture2D(pointTexture, gl_PointCoord);
-            gl_FragColor = vec4(vColor, 1.2) * texColor;
+            gl_FragColor = vec4(vColor, vOpacity) * texColor;
           }
         `,
         vertexColors: true,
@@ -659,7 +689,6 @@
       }
     });
 
-    // 「方角・位置を再取得」を押した時に方位をリセットしてコンパスから再キャリブレーション
     reloadBtn.addEventListener('click', () => {
       fetchCurrentLocation();
       isHeadingInitialized = false;
