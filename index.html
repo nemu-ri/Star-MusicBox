@@ -161,7 +161,6 @@
       { name: "ホノルル", lat: 21.3069, lon: -157.8583 }
     ];
 
-    // 星のテクスチャ（中心の丸＋淡い十字フレア）
     function createStarTexture() {
       const canvas = document.createElement('canvas');
       canvas.width = 128; 
@@ -169,21 +168,19 @@
       const ctx = canvas.getContext('2d');
       ctx.clearRect(0, 0, 128, 128);
 
-      // 1. コアグラデーション
       const coreGrad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
       coreGrad.addColorStop(0.0, 'rgba(255, 255, 255, 1.0)');
-      coreGrad.addColorStop(0.15, 'rgba(255, 255, 255, 0.9)');
-      coreGrad.addColorStop(0.4, 'rgba(230, 240, 255, 0.4)');
+      coreGrad.addColorStop(0.15, 'rgba(255, 255, 255, 0.95)');
+      coreGrad.addColorStop(0.4, 'rgba(230, 240, 255, 0.5)');
       coreGrad.addColorStop(1.0, 'rgba(0, 0, 0, 0.0)');
       ctx.fillStyle = coreGrad;
       ctx.beginPath(); 
       ctx.arc(64, 64, 64, 0, Math.PI * 2); 
       ctx.fill();
 
-      // 2. 十字の光条（アスペクト比を整えて視認性を向上）
       const flareGrad = ctx.createLinearGradient(0, 64, 128, 64);
       flareGrad.addColorStop(0.0, 'rgba(255, 255, 255, 0)');
-      flareGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.7)');
+      flareGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.85)');
       flareGrad.addColorStop(1.0, 'rgba(255, 255, 255, 0)');
 
       ctx.fillStyle = flareGrad;
@@ -497,7 +494,7 @@
       }
     }
 
-    // --- 【バランス調整版】星のサイズ・透明度描画ロジック ---
+    // --- 明るい星を強調した描画ロジック ---
     function buildRealStarField() {
       if (!realStarsData.length) return;
       if (starMesh) scene.remove(starMesh);
@@ -517,16 +514,16 @@
 
         // 明るさの正規化 (視等級 -1.5 〜 6.5)
         const normMag = Math.max(-1.5, Math.min(6.5, star.mag));
-        const magRatio = 1.0 - (normMag + 1.5) / 8.0; // 1.0 (最輝) 〜 0.0 (最暗)
+        const magRatio = 1.0 - (normMag + 1.5) / 8.0; 
 
-        // 2.2乗でマイルドかつ明確な強弱を作る
-        const brightFactor = Math.pow(magRatio, 2.2);
+        // 2.8乗に上げることで、1等星・2等星の大きさを急激にアップ
+        const brightFactor = Math.pow(magRatio, 2.8);
 
-        // 暗い星（2.8px）〜 明るい星（22px）まで適度な拡大
-        sizes.push(2.8 + brightFactor * 19.2);
+        // 暗い星（2.8px）〜 明るい星（最大28px）までサイズ幅を拡張
+        sizes.push(2.8 + brightFactor * 25.2);
 
-        // 暗い星でも 0.65 の不透明度を維持して消えないようにする
-        opacities.push(0.65 + Math.pow(magRatio, 1.2) * 0.35);
+        // 明るい星は完全に近いくっきり不透明度（最大1.0）、暗い星は0.6をキープ
+        opacities.push(0.60 + Math.pow(magRatio, 1.5) * 0.40);
       });
 
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
