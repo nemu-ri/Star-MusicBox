@@ -38,6 +38,7 @@
       background: rgba(255, 215, 0, 0.4);
       border-color: rgba(255, 215, 0, 0.8);
       box-shadow: 0 0 12px rgba(255, 215, 0, 0.6);
+      color: #ffd700;
     }
 
     #reload-btn {
@@ -136,7 +137,8 @@
     <div class="setting-item">
       <span>音色タイプ</span>
       <select id="timbre-select">
-        <option value="kalimba">カリンバ (入眠用)</option>
+        <option value="musicbox">オルゴール (響き・揺らぎ)</option>
+        <option value="kalimba">カリンバ</option>
         <option value="piano">ピアノ</option>
         <option value="synth">シンセパッド</option>
       </select>
@@ -198,9 +200,11 @@
 
     // 音声 & 画面固定用フラグ
     let audioCtx = null;
+    let delayNode = null;
+    let delayFeedback = null;
     let isPlayingMusic = false;
     let musicTimeoutId = null;
-    let currentTimbre = 'kalimba';
+    let currentTimbre = 'musicbox';
 
     const fNaturalMinorScale = [
       174.61, 196.00, 207.65, 233.08, 261.63, 277.18, 311.13,
@@ -878,11 +882,22 @@
       }
     }
 
-    // --- 音声生成と星空演奏ロジック ---
+    // --- 音声生成と星空演奏ロジック（残響＆ビブラート調整版） ---
 
     function initAudioContext() {
       if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        // ディレイ（残響効果）ノードの構築
+        delayNode = audioCtx.createDelay();
+        delayNode.delayTime.value = 0.25; // 残響の間隔
+
+        delayFeedback = audioCtx.createGain();
+        delayFeedback.gain.value = 0.35; // 残響の減衰率
+
+        delayNode.connect(delayFeedback);
+        delayFeedback.connect(delayNode);
+        delayNode.connect(audioCtx.destination);
       }
       if (audioCtx.state === 'suspended') {
         audioCtx.resume();
@@ -891,66 +906,99 @@
 
     function playStarSound(freq, volume) {
       if (!audioCtx) return;
+      if (audioCtx.state === 'suspended') audioCtx.resume();
 
-      if (audioCtx.state === 'suspended') {
-        audioCtx.resume();
-      }
-
-      const osc = audioCtx.createOscillator();
-      const gainNode = audioCtx.createGain();
       const now = audioCtx.currentTime;
-      const duration = currentTimbre === 'synth' ? 2.5 : 1.8;
 
-      osc.frequency.setValueAtTime(freq, now);
-
-      if (currentTimbre === 'kalimba') {
-        osc.type = 'sine';
-        
-        const overtone = audioCtx.createOscillator();
+      if (currentTimbre === 'musicbox') {
+        // --- オルゴール音色 (ビブラート + 倍音 + 残響) ---
+        const osc = audioCtx.createOscillator();
+        const overtone = audioCtx.createOscillator(); // 金属的な高音倍音
+        const gainNode = audioCtx.createGain();
         const overtoneGain = audioCtx.createGain();
-        overtone.type = 'triangle';
-        overtone.frequency.setValueAtTime(freq * 3.01, now);
-        
-        overtoneGain.gain.setValueAtTime(volume * 0.15, now);
-        overtoneGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.3);
-        
+
+        // ビブラート（LFO）
+        const lfo = audioCtx.createOscillator();
+        const lfoGain = audioCtx.createGain();
+        lfo.frequency.setValueAtTime(5.5, now); // 5.5Hzの繊細な振動
+        lfoGain.gain.setValueAtTime(freq * 0.008, now); // 揺らぎの深さ
+        lfo.connect(osc.frequency);
+        lfo.start(now);
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now);
+
+        // オルゴールの特徴であるアタックの強い高次倍音
+        overtone.type = 'sine';
+        overtone.frequency.setValueAtTime(freq * 4.0, now);
+
+        const duration = 2.8;
+
+        // アタック & サステインの設定（アンプエンベロープ）
+        gainNode.gain.setValueAtTime(0.0001, now);
+        gainNode.gain.linearRampToValueAtTime(volume * 0.6, now + 0.005);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+        overtoneGain.gain.setValueAtTime(volume * 0.2, now);
+        overtoneGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.25);
+
+        // 接続 (メイン出力 + ディレイへ送って残響をつける)
+        osc.connect(gainNode);
         overtone.connect(overtoneGain);
-        overtoneGain.connect(audioCtx.destination);
+        overtoneGain.connect(gainNode);
+
+        gainNode.connect(audioCtx.destination);
+        if (delayNode) gainNode.connect(delayNode);
+
+        osc.start(now);
         overtone.start(now);
+        osc.stop(now + duration);
         overtone.stop(now + 0.3);
 
         setTimeout(() => {
+          osc.disconnect();
           overtone.disconnect();
-          overtoneGain.disconnect();
-        }, 350);
-
-        gainNode.gain.setValueAtTime(0.001, now);
-        gainNode.gain.linearRampToValueAtTime(volume * 0.4, now + 0.01);
-        gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 1.8);
-
-      } else if (currentTimbre === 'piano') {
-        osc.type = 'triangle';
-        gainNode.gain.setValueAtTime(0.001, now);
-        gainNode.gain.linearRampToValueAtTime(volume * 0.5, now + 0.02);
-        gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 1.2);
+          gainNode.disconnect();
+          lfo.stop();
+          lfo.disconnect();
+        }, (duration + 0.2) * 1000);
 
       } else {
-        osc.type = 'sine';
-        gainNode.gain.setValueAtTime(0.001, now);
-        gainNode.gain.linearRampToValueAtTime(volume * 0.3, now + 0.3);
-        gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 2.5);
+        // カリンバ、ピアノ、シンセ等の簡易合成
+        const osc = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        const duration = currentTimbre === 'synth' ? 2.5 : 1.8;
+
+        osc.frequency.setValueAtTime(freq, now);
+
+        if (currentTimbre === 'kalimba') {
+          osc.type = 'sine';
+          gainNode.gain.setValueAtTime(0.001, now);
+          gainNode.gain.linearRampToValueAtTime(volume * 0.4, now + 0.01);
+          gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 1.8);
+        } else if (currentTimbre === 'piano') {
+          osc.type = 'triangle';
+          gainNode.gain.setValueAtTime(0.001, now);
+          gainNode.gain.linearRampToValueAtTime(volume * 0.5, now + 0.02);
+          gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 1.2);
+        } else {
+          osc.type = 'sine';
+          gainNode.gain.setValueAtTime(0.001, now);
+          gainNode.gain.linearRampToValueAtTime(volume * 0.3, now + 0.3);
+          gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 2.5);
+        }
+
+        osc.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+
+        osc.start(now);
+        osc.stop(now + duration);
+
+        setTimeout(() => {
+          osc.disconnect();
+          gainNode.disconnect();
+        }, (duration + 0.1) * 1000);
       }
-
-      osc.connect(gainNode);
-      gainNode.connect(audioCtx.destination);
-
-      osc.start(now);
-      osc.stop(now + duration);
-
-      setTimeout(() => {
-        osc.disconnect();
-        gainNode.disconnect();
-      }, (duration + 0.1) * 1000);
     }
 
     function convertStarToSound(star) {
@@ -980,11 +1028,15 @@
       initAudioContext();
       const musicBtn = document.getElementById('music-btn');
 
+      // 演奏中止＆方角追従の復帰
       if (isPlayingMusic) {
         isPlayingMusic = false;
         if (musicTimeoutId) clearTimeout(musicTimeoutId);
         musicBtn.classList.remove('playing');
-        sensorEl.innerText = isManualMode ? "モード: 手動ドラッグ操作中" : "モード: ジャイロ連動中";
+        
+        // ジャイロ・方位の再初期化
+        isHeadingInitialized = false;
+        sensorEl.innerText = isManualMode ? "モード: 手動ドラッグ操作中" : "モード: 方角を取得・画面連動中";
         if (isManualMode) orbitControls.enabled = true;
         return;
       }
@@ -993,13 +1045,13 @@
 
       isPlayingMusic = true;
       musicBtn.classList.add('playing');
-      if (isManualMode) orbitControls.enabled = false; // 演奏中はドラッグも固定
+      if (isManualMode) orbitControls.enabled = false; // 演奏中は操作を固定
 
+      // 画面内に見えている星を抽出
       const visibleStars = [];
       const projVec = new THREE.Vector3();
       const posAttr = starMesh.geometry.attributes.position;
 
-      // 現在画面に見えている星（視野角・画角内）をすべて抽出
       for (let i = 0; i < realStarsData.length; i++) {
         projVec.fromBufferAttribute(posAttr, i);
         projVec.project(camera);
@@ -1021,7 +1073,7 @@
         return;
       }
 
-      // 上から下に向かって順番に演奏（見えている星の数制限を排除）
+      // 上から下に向かって順番にソート
       visibleStars.sort((a, b) => b.screenY - a.screenY);
       const selectedStars = visibleStars;
 
@@ -1030,12 +1082,11 @@
       let currentIndex = 0;
 
       function playNextStar() {
-        if (!isPlayingMusic || currentIndex >= selectedStars.length) {
-          isPlayingMusic = false;
-          musicBtn.classList.remove('playing');
-          sensorEl.innerText = isManualMode ? "モード: 手動ドラッグ操作中" : "モード: ジャイロ連動中";
-          if (isManualMode) orbitControls.enabled = true;
-          return;
+        if (!isPlayingMusic) return;
+
+        // 最後の星まで到達したら最初に戻ってループ
+        if (currentIndex >= selectedStars.length) {
+          currentIndex = 0;
         }
 
         const item = selectedStars[currentIndex];
@@ -1046,8 +1097,8 @@
 
         currentIndex++;
 
-        // 星の数が多い場合でも途切れないスムーズな間隔
-        const delay = 160 + Math.random() * 140;
+        // テンポ感のある演奏間隔
+        const delay = 180 + Math.random() * 120;
         musicTimeoutId = setTimeout(playNextStar, delay);
       }
 
