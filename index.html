@@ -905,6 +905,11 @@
     function playStarSound(freq, volume) {
       if (!audioCtx) return;
 
+      // ブラウザの自動停止ポリシー対策：毎音再生時にサスペンド解除をリトライ
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+
       const osc = audioCtx.createOscillator();
       const gainNode = audioCtx.createGain();
       const now = audioCtx.currentTime;
