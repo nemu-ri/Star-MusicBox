@@ -25,25 +25,16 @@
       line-height: 1.5; pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,0.8); 
     }
 
-    /* ♪ オルゴール演奏ボタン */
-    #music-btn {
+    /* ★ 星空保存ボタン */
+    #save-btn {
       position: absolute; top: 12px; right: 116px; z-index: 30;
       width: 44px; height: 44px; background: rgba(255,255,255,0.2); backdrop-filter: blur(8px);
       border: 1px solid rgba(255,255,255,0.4); border-radius: 50%; color: white;
       cursor: pointer; display: flex; justify-content: center; align-items: center;
       pointer-events: auto; box-shadow: 0 2px 6px rgba(0,0,0,0.5);
-      transition: background 0.3s, transform 0.2s, opacity 0.3s;
+      transition: background 0.3s, transform 0.2s;
     }
-    #music-btn.playing {
-      background: rgba(255, 215, 0, 0.4);
-      border-color: rgba(255, 215, 0, 0.8);
-      box-shadow: 0 0 12px rgba(255, 215, 0, 0.6);
-    }
-    #music-btn:disabled {
-      opacity: 0.3;
-      cursor: not-allowed;
-      pointer-events: none;
-    }
+    #save-btn:active { transform: scale(0.92); }
 
     #reload-btn {
       position: absolute; top: 12px; right: 64px; z-index: 30;
@@ -62,7 +53,7 @@
     }
 
     #sidebar {
-      position: absolute; top: 0; right: 0; width: 300px; height: 100%;
+      position: absolute; top: 0; right: 0; width: 320px; height: 100%;
       background: rgba(10, 15, 30, 0.95); backdrop-filter: blur(12px);
       z-index: 25; padding: 60px 20px 20px; box-sizing: border-box;
       border-left: 1px solid rgba(255,255,255,0.15);
@@ -112,6 +103,31 @@
       color: white; padding: 4px 8px; border-radius: 4px; outline: none;
     }
     select option { background: #0a0f1e; color: white; }
+
+    /* ライブラリ表示スタイル */
+    .library-item {
+      background: rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 12px;
+      margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;
+      border: 1px solid rgba(255,255,255,0.1); transition: background 0.2s, border-color 0.2s;
+    }
+    .library-item.playing {
+      border-color: rgba(255, 215, 0, 0.8);
+      background: rgba(255, 215, 0, 0.15);
+    }
+    .library-info { display: flex; flex-direction: column; gap: 2px; }
+    .library-title { font-size: 13px; font-weight: bold; color: #fff; }
+    .library-sub { font-size: 11px; color: rgba(255,255,255,0.6); }
+    .library-actions { display: flex; gap: 6px; }
+    .lib-btn {
+      width: 34px; height: 34px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.3);
+      background: rgba(255,255,255,0.15); color: white; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; transition: background 0.2s;
+    }
+    .lib-btn:hover { background: rgba(255,255,255,0.3); }
+    .lib-btn.play-btn.playing {
+      background: #f59e0b; border-color: #fbbf24; color: #000;
+    }
+    .lib-btn.delete-btn:hover { background: rgba(239, 68, 68, 0.4); border-color: #ef4444; }
   </style>
 </head>
 <body>
@@ -121,8 +137,8 @@
     <div id="sensor-info">モード: 画面タップで方位固定・連動</div>
   </div>
 
-  <button id="music-btn" title="星空オルゴール再生">
-    <span class="material-symbols-outlined">music_note</span>
+  <button id="save-btn" title="現在の星空を保存 (最大5枚)">
+    <span class="material-symbols-outlined">star</span>
   </button>
 
   <button id="reload-btn" title="方角・位置を再取得">
@@ -172,6 +188,13 @@
     <div class="accordion-content" id="city-accordion-content">
       <div id="city-list"></div>
     </div>
+
+    <hr style="border:0; border-top: 1px solid rgba(255,255,255,0.15); margin: 20px 0;">
+
+    <div class="sidebar-header" style="font-size: 16px;">
+      <span class="material-symbols-outlined">photo_library</span> 星空ライブラリ (最大5枚)
+    </div>
+    <div id="library-list"></div>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -205,10 +228,10 @@
     let audioCtx = null;
     let isPlayingMusic = false;
     let bgmIntervalId = null;
-    let starSequenceIndex = 0;
-    let currentVisibleStars = [];
     let activeTimeouts = [];
     let currentTimbre = 'kalimba';
+    let currentPlayingId = null;
+    let savedLibrary = [];
 
     const fNaturalMinorScale = [
       174.61, 196.00, 207.65, 233.08, 261.63, 277.18, 311.13,
@@ -231,17 +254,6 @@
       { name: "シドニー", lat: -33.8688, lon: 151.2093 },
       { name: "ホノルル", lat: 21.3069, lon: -157.8583 }
     ];
-
-    function updateMusicBtnState() {
-      const musicBtn = document.getElementById('music-btn');
-      if (showConstellations) {
-        musicBtn.disabled = true;
-        musicBtn.title = "星座線非表示の時のみ演奏できます";
-      } else {
-        musicBtn.disabled = false;
-        musicBtn.title = "星空オルゴール再生";
-      }
-    }
 
     function createStarTexture() {
       const canvas = document.createElement('canvas');
@@ -897,7 +909,7 @@
       }
     }
 
-    // --- 音声生成とBGMスケジューラー ---
+    // --- 音声 & ライブラリ再生モジュール ---
 
     function initAudioContext() {
       if (!audioCtx) {
@@ -946,20 +958,6 @@
       };
     }
 
-    function convertStarToSound(star) {
-      const normMag = Math.max(-1.5, Math.min(6.5, star.mag));
-      const volume = Math.pow(1.0 - (normMag + 1.5) / 8.0, 1.5) * 0.8 + 0.1;
-
-      const bv = star.bv !== undefined ? star.bv : 0.4;
-      const clampedBv = Math.max(-0.3, Math.min(1.6, bv));
-      const colorRatio = 1.0 - (clampedBv + 0.3) / 1.9;
-
-      const scaleIndex = Math.floor(colorRatio * (fNaturalMinorScale.length - 1));
-      const freq = fNaturalMinorScale[scaleIndex];
-
-      return { freq, volume };
-    }
-
     function triggerStarFlash(starIndex) {
       if (!starMesh || !starMesh.geometry || !starMesh.geometry.attributes.aFlash) return;
       const flashArr = starMesh.geometry.attributes.aFlash.array;
@@ -996,12 +994,14 @@
         }
       }
 
+      // 上から順にソート (screenYが高い順)
       stars.sort((a, b) => b.screenY - a.screenY);
       return stars;
     }
 
     function stopMusicPlayback() {
       isPlayingMusic = false;
+      currentPlayingId = null;
 
       if (bgmIntervalId) {
         clearInterval(bgmIntervalId);
@@ -1010,10 +1010,8 @@
       activeTimeouts.forEach(id => clearTimeout(id));
       activeTimeouts = [];
 
-      const musicBtn = document.getElementById('music-btn');
-      if (musicBtn) musicBtn.classList.remove('playing');
-
       resetFlashBoosts();
+      renderLibrary();
 
       if (sensorEl) {
         sensorEl.innerText = isManualMode ? "モード: 手動ドラッグ操作中" : "モード: ジャイロ連動中";
@@ -1025,96 +1023,199 @@
       }
     }
 
-    function startBgmScheduler() {
-      currentVisibleStars = updateVisibleStars();
-      if (currentVisibleStars.length === 0) {
-        if (sensorEl) sensorEl.innerText = "オルゴール: 視界内に星がありません";
+    // ライブラリ内の1つの星空を再生
+    function playLibraryItem(id) {
+      initAudioContext();
+
+      if (currentPlayingId === id) {
         stopMusicPlayback();
         return;
       }
 
-      starSequenceIndex = 0;
+      stopMusicPlayback();
+
+      const item = savedLibrary.find(x => x.id === id);
+      if (!item || !item.stars || item.stars.length === 0) return;
+
+      isPlayingMusic = true;
+      currentPlayingId = id;
+
+      renderLibrary();
+
+      if (sensorEl) {
+        sensorEl.innerText = `♪ ライブラリ演奏中: ${item.title}`;
+      }
+
+      let starIndex = 0;
       let nextNoteTime = audioCtx.currentTime + 0.1;
 
+      // フリーズ対策を行ったタイマースケジューラー
       bgmIntervalId = setInterval(() => {
         if (!isPlayingMusic) return;
 
-        while (nextNoteTime < audioCtx.currentTime + 1.2) {
-          // 画面内の全星を1巡演奏し終えたら、最新の視界内星リストに更新してトップから再開
-          if (starSequenceIndex >= currentVisibleStars.length) {
-            const freshStars = updateVisibleStars();
-            if (freshStars.length > 0) {
-              currentVisibleStars = freshStars;
-            }
-            starSequenceIndex = 0;
-          }
-
-          const currentItem = currentVisibleStars[starSequenceIndex];
-          if (!currentItem) {
-            starSequenceIndex = 0;
-            break;
-          }
-
-          const chordGroup = [currentItem];
-          let checkIdx = starSequenceIndex + 1;
-
-          // 高さがきわめて近い星（密集地帯）を最大3音の和音としてまとめる
-          while (
-            chordGroup.length < 3 &&
-            checkIdx < currentVisibleStars.length &&
-            Math.abs(currentVisibleStars[checkIdx].screenY - currentItem.screenY) < 0.015
-          ) {
-            chordGroup.push(currentVisibleStars[checkIdx]);
-            checkIdx++;
-          }
-
-          const volMultiplier = chordGroup.length > 1 ? 0.6 : 1.0;
-          chordGroup.forEach(item => {
-            const { freq, volume } = convertStarToSound(item.starData);
-            scheduleStarSound(freq, volume * volMultiplier, nextNoteTime);
-
-            const delayMs = Math.max(0, (nextNoteTime - audioCtx.currentTime) * 1000);
-            const tid = setTimeout(() => {
-              if (isPlayingMusic) triggerStarFlash(item.index);
-            }, delayMs);
-            activeTimeouts.push(tid);
-          });
-
-          // 鳴らした分だけ確実にインデックスを進める
-          starSequenceIndex += chordGroup.length;
-          nextNoteTime += 0.22 + Math.random() * 0.25;
+        // タブ切り替えやスリープによる時刻遅れを安全補正
+        if (nextNoteTime < audioCtx.currentTime) {
+          nextNoteTime = audioCtx.currentTime + 0.1;
         }
 
-        if (activeTimeouts.length > 60) {
+        while (nextNoteTime < audioCtx.currentTime + 1.0) {
+          if (starIndex >= item.stars.length) {
+            starIndex = 0; // ループ演奏
+          }
+
+          const star = item.stars[starIndex];
+
+          // 1. 明るさ (mag) をボリューム（音量）へ変換
+          const normMag = Math.max(-1.5, Math.min(6.5, star.mag));
+          const volume = Math.pow(1.0 - (normMag + 1.5) / 8.0, 1.5) * 0.7 + 0.1;
+
+          // 2. 色 (bv) を Fナチュラルマイナースケール（音高・オクターブ）へ変換
+          const bv = star.bv !== undefined ? star.bv : 0.4;
+          const clampedBv = Math.max(-0.3, Math.min(1.6, bv));
+          const colorRatio = 1.0 - (clampedBv + 0.3) / 1.9; // 1.0(青=高音) 〜 0.0(赤=低音)
+          const scaleIndex = Math.floor(colorRatio * (fNaturalMinorScale.length - 1));
+          const freq = fNaturalMinorScale[scaleIndex];
+
+          scheduleStarSound(freq, volume, nextNoteTime);
+
+          // 可能であれば画面上の該当星をフラッシュ
+          if (star.origIndex !== undefined) {
+            const delayMs = Math.max(0, (nextNoteTime - audioCtx.currentTime) * 1000);
+            const tid = setTimeout(() => {
+              if (isPlayingMusic) triggerStarFlash(star.origIndex);
+            }, delayMs);
+            activeTimeouts.push(tid);
+          }
+
+          starIndex++;
+          // 睡眠前のオルゴールらしくゆったりとしたテンポ (約300〜450ms間隔)
+          nextNoteTime += 0.30 + Math.random() * 0.15;
+        }
+
+        if (activeTimeouts.length > 50) {
           activeTimeouts = activeTimeouts.slice(-20);
         }
       }, 100);
     }
 
-    function toggleStarMusic() {
-      if (showConstellations) return;
+    // --- ライブラリ管理 (保存・削除・描画) ---
 
-      initAudioContext();
+    function loadLibrary() {
+      const data = localStorage.getItem('star_library_data');
+      if (data) {
+        try {
+          savedLibrary = JSON.parse(data);
+        } catch(e) {
+          savedLibrary = [];
+        }
+      }
+    }
 
-      if (isPlayingMusic) {
-        stopMusicPlayback();
+    function saveLibraryToStorage() {
+      localStorage.setItem('star_library_data', JSON.stringify(savedLibrary));
+    }
+
+    function saveCurrentStarfield() {
+      if (savedLibrary.length >= 5) {
+        alert("ライブラリには最大5枚までしか保存できません。\n不要な星空を削除してから保存してください。");
         return;
       }
 
-      if (!starMesh || !realStarsData.length) return;
-
-      isPlayingMusic = true;
-
-      const musicBtn = document.getElementById('music-btn');
-      if (musicBtn) musicBtn.classList.add('playing');
-
-      if (orbitControls) orbitControls.enabled = false;
-
-      if (sensorEl) {
-        sensorEl.innerText = `♪ シームレスBGM再生中（タップで停止）`;
+      const visibleStars = updateVisibleStars();
+      if (visibleStars.length === 0) {
+        alert("視界内に保存できる星が見つかりません。画面を星空に向けて保存してください。");
+        return;
       }
 
-      startBgmScheduler();
+      // 画面上部から順にソートされた星データを抽出
+      const starsData = visibleStars.map(s => ({
+        mag: s.starData.mag,
+        bv: s.starData.bv,
+        origIndex: s.index
+      }));
+
+      const now = new Date();
+      const timeStr = `${now.getMonth() + 1}/${now.getDate()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+      const newItem = {
+        id: Date.now().toString(),
+        title: `${cityName}`,
+        date: timeStr,
+        starCount: starsData.length,
+        stars: starsData
+      };
+
+      savedLibrary.push(newItem);
+      saveLibraryToStorage();
+      renderLibrary();
+
+      // 設定画面を開いて確認しやすくする
+      const sidebar = document.getElementById('sidebar');
+      const toggleIcon = document.getElementById('toggle-icon');
+      if (!sidebar.classList.contains('open')) {
+        sidebar.classList.add('open');
+        toggleIcon.innerText = 'close';
+      }
+
+      alert("現在の星空をライブラリに保存しました！");
+    }
+
+    function deleteLibraryItem(id) {
+      if (currentPlayingId === id) {
+        stopMusicPlayback();
+      }
+      savedLibrary = savedLibrary.filter(item => item.id !== id);
+      saveLibraryToStorage();
+      renderLibrary();
+    }
+
+    function renderLibrary() {
+      const container = document.getElementById('library-list');
+      if (!container) return;
+
+      if (savedLibrary.length === 0) {
+        container.innerHTML = `
+          <div style="font-size: 12px; color: rgba(255,255,255,0.5); text-align: center; padding: 20px 0;">
+            保存された星空はありません<br>画面右上の★ボタンで保存できます
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = '';
+      savedLibrary.forEach((item, index) => {
+        const isPlaying = currentPlayingId === item.id;
+        const div = document.createElement('div');
+        div.className = `library-item ${isPlaying ? 'playing' : ''}`;
+        div.innerHTML = `
+          <div class="library-info">
+            <div class="library-title">No.${index + 1} ${item.title} (${item.starCount}個)</div>
+            <div class="library-sub">${item.date}</div>
+          </div>
+          <div class="library-actions">
+            <button class="lib-btn play-btn ${isPlaying ? 'playing' : ''}" title="${isPlaying ? '停止' : '再生'}">
+              <span class="material-symbols-outlined">${isPlaying ? 'pause' : 'music_note'}</span>
+            </button>
+            <button class="lib-btn delete-btn" title="削除">
+              <span class="material-symbols-outlined">delete</span>
+            </button>
+          </div>
+        `;
+
+        const playBtn = div.querySelector('.play-btn');
+        playBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          playLibraryItem(item.id);
+        });
+
+        const delBtn = div.querySelector('.delete-btn');
+        delBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          deleteLibraryItem(item.id);
+        });
+
+        container.appendChild(div);
+      });
     }
 
     // --- UIイベント設定 ---
@@ -1129,11 +1230,11 @@
     const cityAccordionContent = document.getElementById('city-accordion-content');
     const accordionArrow = document.getElementById('accordion-arrow');
     const reloadBtn = document.getElementById('reload-btn');
-    const musicBtn = document.getElementById('music-btn');
+    const saveBtn = document.getElementById('save-btn');
     const timbreSelect = document.getElementById('timbre-select');
 
-    musicBtn.addEventListener('click', () => {
-      toggleStarMusic();
+    saveBtn.addEventListener('click', () => {
+      saveCurrentStarfield();
     });
 
     timbreSelect.addEventListener('change', (e) => {
@@ -1175,7 +1276,6 @@
     constellationToggle.addEventListener('change', (e) => {
       showConstellations = e.target.checked;
       buildConstellations(new Date());
-      updateMusicBtnState();
     });
 
     cityAccordionBtn.addEventListener('click', () => {
@@ -1203,9 +1303,17 @@
       });
     }
 
+    // バックグラウンドに移動した際の安全停止処理
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && isPlayingMusic) {
+        stopMusicPlayback();
+      }
+    });
+
     window.addEventListener('DOMContentLoaded', () => {
       initThree();
-      updateMusicBtnState();
+      loadLibrary();
+      renderLibrary();
       requestAnimationFrame(animate);
       fetchCurrentLocation();
 
