@@ -1019,7 +1019,6 @@
         sensorEl.innerText = isManualMode ? "モード: 手動ドラッグ操作中" : "モード: ジャイロ連動中";
       }
 
-      // カメラコントロールをモードに合わせて復帰＆強制リセット
       if (orbitControls) {
         orbitControls.enabled = isManualMode;
         orbitControls.update();
@@ -1040,33 +1039,36 @@
       bgmIntervalId = setInterval(() => {
         if (!isPlayingMusic) return;
 
-        const freshStars = updateVisibleStars();
-        if (freshStars.length > 0) {
-          currentVisibleStars = freshStars;
-        }
-
         while (nextNoteTime < audioCtx.currentTime + 1.2) {
+          // 画面内の全星を1巡演奏し終えたら、最新の視界内星リストに更新してトップから再開
           if (starSequenceIndex >= currentVisibleStars.length) {
+            const freshStars = updateVisibleStars();
+            if (freshStars.length > 0) {
+              currentVisibleStars = freshStars;
+            }
             starSequenceIndex = 0;
           }
 
           const currentItem = currentVisibleStars[starSequenceIndex];
-          if (!currentItem) break;
-
-          const chordGroup = [currentItem];
-          let nextIdx = (starSequenceIndex + 1) % currentVisibleStars.length;
-
-          while (
-            chordGroup.length < 3 && 
-            nextIdx !== starSequenceIndex &&
-            currentVisibleStars[nextIdx] &&
-            Math.abs(currentVisibleStars[nextIdx].screenY - currentItem.screenY) < 0.02
-          ) {
-            chordGroup.push(currentVisibleStars[nextIdx]);
-            nextIdx = (nextIdx + 1) % currentVisibleStars.length;
+          if (!currentItem) {
+            starSequenceIndex = 0;
+            break;
           }
 
-          const volMultiplier = chordGroup.length > 1 ? 0.7 : 1.0;
+          const chordGroup = [currentItem];
+          let checkIdx = starSequenceIndex + 1;
+
+          // 高さがきわめて近い星（密集地帯）を最大3音の和音としてまとめる
+          while (
+            chordGroup.length < 3 &&
+            checkIdx < currentVisibleStars.length &&
+            Math.abs(currentVisibleStars[checkIdx].screenY - currentItem.screenY) < 0.015
+          ) {
+            chordGroup.push(currentVisibleStars[checkIdx]);
+            checkIdx++;
+          }
+
+          const volMultiplier = chordGroup.length > 1 ? 0.6 : 1.0;
           chordGroup.forEach(item => {
             const { freq, volume } = convertStarToSound(item.starData);
             scheduleStarSound(freq, volume * volMultiplier, nextNoteTime);
@@ -1078,8 +1080,9 @@
             activeTimeouts.push(tid);
           });
 
-          starSequenceIndex = (starSequenceIndex + chordGroup.length) % currentVisibleStars.length;
-          nextNoteTime += 0.25 + Math.random() * 0.3;
+          // 鳴らした分だけ確実にインデックスを進める
+          starSequenceIndex += chordGroup.length;
+          nextNoteTime += 0.22 + Math.random() * 0.25;
         }
 
         if (activeTimeouts.length > 60) {
