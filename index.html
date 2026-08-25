@@ -93,7 +93,6 @@
     <div id="sensor-info">モード: 画面タップで方位固定・連動</div>
   </div>
 
-  <!-- リロードボタン（設定ボタンの左横に配置・Google Fontsのrefreshアイコン使用） -->
   <button id="reload-btn" title="方角・位置を再取得">
     <span class="material-symbols-outlined">refresh</span>
   </button>
@@ -157,7 +156,6 @@
     let isHeadingInitialized = false;
     let screenOrientation = window.orientation || 0;
 
-    // ピンチズーム制御用変数
     let initialPinchDistance = null;
     let initialFov = 75;
 
@@ -412,7 +410,6 @@
       renderer.setSize(width, height);
     }
 
-    // ピンチズーム・マウスホイールイベントの追加
     function setupZoomControls() {
       const dom = renderer.domElement;
 
@@ -433,8 +430,6 @@
         if (e.touches.length === 2 && initialPinchDistance !== null) {
           const currentDistance = getDistance(e);
           const factor = initialPinchDistance / currentDistance;
-          
-          // FOV（視野角）を変更してズーム操作を実現 (20°〜100°の範囲に制限)
           camera.fov = Math.max(20, Math.min(100, initialFov * factor));
           camera.updateProjectionMatrix();
         }
@@ -446,7 +441,6 @@
         }
       }, { passive: true });
 
-      // PC環境向けのマウスホイールでのズーム対応
       dom.addEventListener('wheel', (e) => {
         e.preventDefault();
         const zoomSpeed = 0.05;
@@ -469,7 +463,7 @@
       document.body.appendChild(renderer.domElement);
 
       orbitControls = new THREE.OrbitControls(camera, renderer.domElement);
-      orbitControls.enableZoom = false; // カスタムズームを使うため標準ズームはOFF
+      orbitControls.enableZoom = false;
       orbitControls.enablePan = false;
       orbitControls.rotateSpeed = -0.5;
       orbitControls.enabled = false;
@@ -479,7 +473,7 @@
 
       loadRealStarCatalog();
       setupSensorSync();
-      setupZoomControls(); // ズーム制御を設定
+      setupZoomControls();
 
       window.addEventListener('resize', updateCanvasSize);
       if (window.visualViewport) {
@@ -565,6 +559,33 @@
       }
     }
 
+    // 等級ごとの指定pxサイズを線形補間（ラープ）で計算する関数
+    function getExactStarSize(mag) {
+      // 指定基準テーブル [等級, pxサイズ]
+      // 暗い星（2等〜4等）のサイズを少し底上げして視認性を高めています
+      const table = [
+        [-1.5, 30.0],
+        [ 0.0, 19.5], // 20px〜19pxの中間
+        [ 1.0, 12.5], // 13px〜12pxの中間
+        [ 2.0,  8.25], // 8.5px〜8pxの中間（底上げ）
+        [ 3.0,  4.5],  // 5px〜4pxの中間（底上げ）
+        [ 6.5,  2.8]   // 最小サイズ
+      ];
+
+      if (mag <= table[0][0]) return table[0][1];
+      if (mag >= table[table.length - 1][0]) return table[table.length - 1][1];
+
+      for (let i = 0; i < table.length - 1; i++) {
+        const [m1, s1] = table[i];
+        const [m2, s2] = table[i + 1];
+        if (mag >= m1 && mag <= m2) {
+          const t = (mag - m1) / (m2 - m1);
+          return s1 + t * (s2 - s1);
+        }
+      }
+      return 2.8;
+    }
+
     function buildRealStarField() {
       if (!realStarsData.length) return;
       if (starMesh) scene.remove(starMesh);
@@ -582,16 +603,13 @@
         const c = star.color;
         colors.push(c.r, c.g, c.b);
 
-        // --- 等級別サイズ設計の反映 ---
-        // -1.5等 〜 6.5等の範囲にクランプして正規化 (1.0 = -1.5等, 0.0 = 6.5等)
+        // 指定基準テーブルに基づく正確なサイズ取得
+        const starSize = getExactStarSize(star.mag);
+        sizes.push(starSize);
+
+        // 透明度の計算
         const normMag = Math.max(-1.5, Math.min(6.5, star.mag));
-        const magRatio = 1.0 - (normMag + 1.5) / 8.0; 
-
-        // 2.75乗のカーブを適用することで、ご指定の各等級サイズ範囲に綺麗にフィットさせます
-        // -1.5等: 30.0px / 0等: 約19.5px / 1等: 約12.3px / 2等: 約7.2px / 3等: 約3.8px / 6.5等: 2.8px
-        const brightFactor = Math.pow(magRatio, 2.75);
-
-        sizes.push(2.8 + brightFactor * 27.2);
+        const magRatio = 1.0 - (normMag + 1.5) / 8.0;
         opacities.push(0.60 + Math.pow(magRatio, 1.5) * 0.40);
       });
 
