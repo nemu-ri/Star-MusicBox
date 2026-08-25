@@ -684,13 +684,14 @@
           void main() {
             vColor = color;
             
-            // FOVが広がる（ズームアウトする）につれて限界限界等級を下げる
-            // ズームイン(FOV 30): 約6.5等星まで表示
-            // ズームアウト(FOV 90): 約2.5等星以上の明るい星のみ表示
-            float magCutoff = mix(6.5, 2.5, smoothstep(30.0, 90.0, uFov));
+            // FOVが広がる（ズームアウト）に従って見せる星の限界等級を下げる
+            // FOV 30(ズームイン): 6.8等星まで表示
+            // FOV 95(ズームアウト): 3.2等星以上の明るい星のみ表示
+            float magCutoff = mix(6.8, 3.2, smoothstep(30.0, 95.0, uFov));
             
-            // 限界等級付近の星を滑らかにフェードアウトさせる
-            float fadeFactor = smoothstep(magCutoff, magCutoff - 1.0, aMag);
+            // aMag <= magCutoff - 1.0 : 不透明度100%保持
+            // aMag >= magCutoff : 完全フェードアウト（1.0 -> 0.0）
+            float fadeFactor = 1.0 - smoothstep(magCutoff - 1.0, magCutoff, aMag);
             vOpacity = aOpacity * fadeFactor;
 
             vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
