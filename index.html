@@ -462,7 +462,6 @@
         if (e.touches.length === 2 && initialPinchDistance !== null) {
           const currentDistance = getDistance(e);
           const factor = initialPinchDistance / currentDistance;
-          // 最小FOVを10まで引き下げて、さらに大きくズームインできるように修正
           camera.fov = Math.max(10, Math.min(100, initialFov * factor));
           camera.updateProjectionMatrix();
         }
@@ -477,7 +476,6 @@
       dom.addEventListener('wheel', (e) => {
         e.preventDefault();
         const zoomSpeed = 0.05;
-        // ホイール操作時も最小FOVを10に設定
         camera.fov = Math.max(10, Math.min(100, camera.fov + e.deltaY * zoomSpeed));
         camera.updateProjectionMatrix();
       }, { passive: false });
@@ -679,9 +677,11 @@
           void main() {
             vColor = color;
             
-            // 5.0等星以下の暗い星（5.0〜8.5等星）をズームアウト時（FOVが広がる際）に透過フェードアウト
+            // 広角（uFov=75）からズームイン（uFov=20）にかけて 0.0 -> 1.0 に変化
+            float zoomFactor = smoothstep(75.0, 20.0, uFov);
+
+            // 5.0等星より暗い星は、ズームインした時に滑らかにフェードインして浮かび上がる
             if (aMag > 5.0) {
-              float zoomFactor = smoothstep(75.0, 30.0, uFov);
               vOpacity = aOpacity * zoomFactor;
             } else {
               vOpacity = aOpacity;
@@ -698,7 +698,7 @@
           varying float vOpacity;
           
           void main() {
-            if (vOpacity <= 0.001) discard;
+            if (vOpacity <= 0.005) discard;
             vec4 texColor = texture2D(pointTexture, gl_PointCoord);
             gl_FragColor = vec4(vColor, vOpacity) * texColor;
           }
