@@ -147,6 +147,7 @@
     let showConstellations = true;
     let realStarsData = [];
     let constellationLinesData = [];
+    let constellationStarKeys = new Set(); // 星座を構成する星のキーセット
     let solarSystemGroup = new THREE.Group();
     let constellationGroup = new THREE.Group();
     let lastCalcTime = 0;
@@ -219,6 +220,19 @@
         const starsData = await starsRes.json();
         const constData = await constRes.json();
 
+        constellationLinesData = constData.features;
+
+        // 星座の線を構成する頂点座標をキーとして保存
+        constellationStarKeys.clear();
+        constellationLinesData.forEach(feature => {
+          feature.geometry.coordinates.forEach(line => {
+            line.forEach(pt => {
+              const key = `${pt[0].toFixed(2)},${pt[1].toFixed(2)}`;
+              constellationStarKeys.add(key);
+            });
+          });
+        });
+
         realStarsData = starsData.features.map(f => {
           const coords = f.geometry.coordinates;
           const mag = f.properties.mag;
@@ -231,10 +245,13 @@
           else if (bv < 1.2) color.setHex(0xffdd85);
           else color.setHex(0xffa050);
 
-          return { ra: coords[0] / 15, dec: coords[1], mag: mag, color: color };
+          // 星座を構成する星か判定
+          const starKey = `${coords[0].toFixed(2)},${coords[1].toFixed(2)}`;
+          const isConstellationStar = constellationStarKeys.has(starKey);
+
+          return { ra: coords[0] / 15, dec: coords[1], mag: mag, color: color, isConstellationStar: isConstellationStar };
         });
 
-        constellationLinesData = constData.features;
         buildRealStarField();
       } catch (e) {
         console.error("データの読み込みに失敗しました:", e);
@@ -560,16 +577,21 @@
     }
 
     // 等級ごとの指定pxサイズを線形補間（ラープ）で計算する関数
-    function getExactStarSize(mag) {
-      // 指定基準テーブル [等級, pxサイズ]
-      // 暗い星（2等〜4等）のサイズを少し底上げして視認性を高めています
+    function getExactStarSize(mag, isConstellationStar) {
+      if (isConstellationStar) {
+        if (mag < 2.5) return 9.0;      // 2等（およびそれ以上明るい星）: 9px
+        if (mag < 3.5) return 7.0;      // 3等: 7px
+        return 4.0;                     // それ以下の等級: 4px
+      }
+
+      // 星座外の星の標準サイズテーブル
       const table = [
         [-1.5, 30.0],
-        [ 0.0, 19.5], // 20px〜19pxの中間
-        [ 1.0, 12.5], // 13px〜12pxの中間
-        [ 2.0,  8.25], // 8.5px〜8pxの中間（底上げ）
-        [ 3.0,  4.5],  // 5px〜4pxの中間（底上げ）
-        [ 6.5,  2.8]   // 最小サイズ
+        [ 0.0, 19.5],
+        [ 1.0, 12.5],
+        [ 2.0,  8.25],
+        [ 3.0,  4.5],
+        [ 6.5,  2.8]
       ];
 
       if (mag <= table[0][0]) return table[0][1];
@@ -603,14 +625,21 @@
         const c = star.color;
         colors.push(c.r, c.g, c.b);
 
-        // 指定基準テーブルに基づく正確なサイズ取得
-        const starSize = getExactStarSize(star.mag);
+        // 指定条件に基づくサイズ計算
+        const starSize = getExactStarSize(star.mag, star.isConstellationStar);
         sizes.push(starSize);
 
         // 透明度の計算
         const normMag = Math.max(-1.5, Math.min(6.5, star.mag));
         const magRatio = 1.0 - (normMag + 1.5) / 8.0;
-        opacities.push(0.60 + Math.pow(magRatio, 1.5) * 0.40);
+        let baseOpacity = 0.60 + Math.pow(magRatio, 1.5) * 0.40;
+
+        // 星座を構成する星の場合は透明度を +0.05 加算
+        if (star.isConstellationStar) {
+          baseOpacity = Math.min(1.0, baseOpacity + 0.05);
+        }
+
+        opacities.push(baseOpacity);
       });
 
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
