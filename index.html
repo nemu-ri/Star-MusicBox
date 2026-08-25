@@ -161,42 +161,39 @@
       { name: "ホノルル", lat: 21.3069, lon: -157.8583 }
     ];
 
-    // --- 【修正】高解像度 ＋ 十字フレア表現のテクスチャ ---
+    // 星のテクスチャ（中心の丸＋淡い十字フレア）
     function createStarTexture() {
       const canvas = document.createElement('canvas');
-      canvas.width = 256; 
-      canvas.height = 256;
+      canvas.width = 128; 
+      canvas.height = 128;
       const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, 256, 256);
+      ctx.clearRect(0, 0, 128, 128);
 
-      // 1. 中心の光（コア）
-      const coreGrad = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+      // 1. コアグラデーション
+      const coreGrad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
       coreGrad.addColorStop(0.0, 'rgba(255, 255, 255, 1.0)');
-      coreGrad.addColorStop(0.08, 'rgba(255, 255, 255, 0.95)');
-      coreGrad.addColorStop(0.25, 'rgba(255, 240, 210, 0.35)');
-      coreGrad.addColorStop(0.55, 'rgba(255, 210, 160, 0.08)');
+      coreGrad.addColorStop(0.15, 'rgba(255, 255, 255, 0.9)');
+      coreGrad.addColorStop(0.4, 'rgba(230, 240, 255, 0.4)');
       coreGrad.addColorStop(1.0, 'rgba(0, 0, 0, 0.0)');
       ctx.fillStyle = coreGrad;
       ctx.beginPath(); 
-      ctx.arc(128, 128, 128, 0, Math.PI * 2); 
+      ctx.arc(64, 64, 64, 0, Math.PI * 2); 
       ctx.fill();
 
-      // 2. 十字のレンズフレア（光条）
-      const flareGrad = ctx.createLinearGradient(0, 128, 256, 128);
+      // 2. 十字の光条（アスペクト比を整えて視認性を向上）
+      const flareGrad = ctx.createLinearGradient(0, 64, 128, 64);
       flareGrad.addColorStop(0.0, 'rgba(255, 255, 255, 0)');
-      flareGrad.addColorStop(0.5, 'rgba(255, 245, 220, 0.6)');
+      flareGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.7)');
       flareGrad.addColorStop(1.0, 'rgba(255, 255, 255, 0)');
 
       ctx.fillStyle = flareGrad;
-      // 横方向
-      ctx.fillRect(0, 126, 256, 4);
+      ctx.fillRect(0, 62, 128, 4);
 
-      // 縦方向
       ctx.save();
-      ctx.translate(128, 128);
+      ctx.translate(64, 64);
       ctx.rotate(Math.PI / 2);
-      ctx.translate(-128, -128);
-      ctx.fillRect(0, 126, 256, 4);
+      ctx.translate(-64, -64);
+      ctx.fillRect(0, 62, 128, 4);
       ctx.restore();
 
       return new THREE.CanvasTexture(canvas);
@@ -500,7 +497,7 @@
       }
     }
 
-    // --- 【修正】シェーダーとコントラスト計算の最適化 ---
+    // --- 【バランス調整版】星のサイズ・透明度描画ロジック ---
     function buildRealStarField() {
       if (!realStarsData.length) return;
       if (starMesh) scene.remove(starMesh);
@@ -518,18 +515,18 @@
         const c = star.color;
         colors.push(c.r, c.g, c.b);
 
-        // 明るさの正規化 (-1.5 〜 6.5)
+        // 明るさの正規化 (視等級 -1.5 〜 6.5)
         const normMag = Math.max(-1.5, Math.min(6.5, star.mag));
-        const magRatio = 1.0 - (normMag + 1.5) / 8.0;
+        const magRatio = 1.0 - (normMag + 1.5) / 8.0; // 1.0 (最輝) 〜 0.0 (最暗)
 
-        // 4乗の指数計算で上位の明るい星だけを強烈に拡大
-        const brightFactor = Math.pow(magRatio, 4.0);
+        // 2.2乗でマイルドかつ明確な強弱を作る
+        const brightFactor = Math.pow(magRatio, 2.2);
 
-        // 暗い星は 1.4px で繊細に、超明るい星は 26px でフレアを魅せる
-        sizes.push(1.4 + brightFactor * 24.6);
+        // 暗い星（2.8px）〜 明るい星（22px）まで適度な拡大
+        sizes.push(2.8 + brightFactor * 19.2);
 
-        // 暗い星も 0.38 確保して密度のスカスカ感を防ぐ
-        opacities.push(0.38 + Math.pow(magRatio, 1.8) * 0.62);
+        // 暗い星でも 0.65 の不透明度を維持して消えないようにする
+        opacities.push(0.65 + Math.pow(magRatio, 1.2) * 0.35);
       });
 
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
