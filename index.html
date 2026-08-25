@@ -224,7 +224,6 @@
 
         constellationLinesData = constData.features;
 
-        // 星座線のすべての端点・頂点座標をリスト化
         constellationPointsList = [];
         constellationLinesData.forEach(feature => {
           const geometry = feature.geometry;
@@ -238,14 +237,13 @@
           });
         });
 
-        // 距離判定により「星座線に含まれる星」を柔軟に検出する関数
         const isPointNearConstellation = (ra, dec) => {
           for (let i = 0; i < constellationPointsList.length; i++) {
             const pt = constellationPointsList[i];
             const dRa = (ra - pt.ra) * 15 * Math.cos(dec * Math.PI / 180);
             const dDec = dec - pt.dec;
             const dist = Math.sqrt(dRa * dRa + dDec * dDec);
-            if (dist < 0.8) return true; // 0.8度以内の誤差を許容
+            if (dist < 0.8) return true;
           }
           return false;
         };
@@ -629,7 +627,7 @@
       if (starMesh) scene.remove(starMesh);
 
       const geometry = new THREE.BufferGeometry();
-      const positions = [], colors = [], sizes = [], opacities = [];
+      const positions = [], colors = [], sizes = [], opacities = [], mags = [];
       const now = new Date();
       const radius = 100;
 
@@ -653,26 +651,49 @@
         }
 
         opacities.push(baseOpacity);
+        mags.push(star.mag);
       });
 
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
       geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
       geometry.setAttribute('aSize', new THREE.Float32BufferAttribute(sizes, 1));
       geometry.setAttribute('aOpacity', new THREE.Float32BufferAttribute(opacities, 1));
+      geometry.setAttribute('aMag', new THREE.Float32BufferAttribute(mags, 1));
 
       const shaderMaterial = new THREE.ShaderMaterial({
-        uniforms: { pointTexture: { value: createStarTexture() } },
+        uniforms: { 
+          pointTexture: { value: createStarTexture() },
+          uFov: { value: camera.fov }
+        },
         vertexShader: `
           attribute float aSize;
           attribute float aOpacity;
+          attribute float aMag;
           varying vec3 vColor;
           varying float vOpacity;
+          uniform float uFov;
           
           void main() {
             vColor = color;
-            vOpacity = aOpacity;
+            
+            // FOV（ズームレベル）に応じた限界等級の計算（ズームインで細かな星まで見える）
+            // 広角(FOV 100°)で限界等級 約2.5等、標準(FOV 75°)で約4.0等、望遠(FOV 20°)で全等級(6.5等)表示
+            float minFov = 20.0;
+            float maxFov = 100.0;
+            float fovRatio = clamp((uFov - minFov) / (maxFov - minFov), 0.0, 1.0);
+            float limitMag = mix(6.5, 2.5, fovRatio);
+            
+            // 限界等級付近でなめらかにフェードアウト（0.8等級幅で遷移）
+            float fadeWidth = 0.8;
+            float magFactor = clamp((limitMag - aMag) / fadeWidth, 0.0, 1.0);
+            
+            vOpacity = aOpacity * magFactor;
+            
             vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-            gl_PointSize = aSize * (180.0 / -mvPosition.z);
+            
+            // ズームイン時にも自然な遠近感・サイズ感が残るよう調整
+            float fovScale = 75.0 / uFov;
+            gl_PointSize = aSize * (180.0 / -mvPosition.z) * sqrt(fovScale);
             gl_Position = projectionMatrix * mvPosition;
           }
         `,
@@ -682,6 +703,7 @@
           varying float vOpacity;
           
           void main() {
+            if (vOpacity <= 0.01) discard; // 完全に透明になった星は描画スキップ
             vec4 texColor = texture2D(pointTexture, gl_PointCoord);
             gl_FragColor = vec4(vColor, vOpacity) * texColor;
           }
@@ -757,6 +779,11 @@
       if (nowTime - lastCalcTime > 10000) {
         if (realStarsData.length > 0) buildRealStarField();
         lastCalcTime = nowTime;
+      }
+
+      // ズーム(FOV)の最新値を頂点シェーダーへリアルタイム伝達
+      if (starMesh && starMesh.material.uniforms) {
+        starMesh.material.uniforms.uFov.value = camera.fov;
       }
 
       if (isManualMode) {
