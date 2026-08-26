@@ -6,140 +6,48 @@
   <title>リアルタイムAR星空オルゴール</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
   <style>
-    body {
-      margin: 0;
-      overflow: hidden;
-      background: #000;
-      color: #fff;
-      font-family: sans-serif;
-      touch-action: none;
-      user-select: none;
-    }
+    body { margin: 0; overflow: hidden; background: #000; color: #fff; font-family: sans-serif; touch-action: none; user-select: none; }
     canvas { display: block; }
-    
     .material-symbols-outlined { font-size: 20px; vertical-align: middle; user-select: none; }
-
-    #info { 
-      position: absolute; top: 10px; left: 10px; right: 180px; 
-      font-size: 12px; color: rgba(255,255,255,0.9); z-index: 5; 
-      line-height: 1.5; pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,0.8); 
-    }
-
-    #save-btn {
-      position: absolute; top: 12px; right: 116px; z-index: 30;
-      width: 44px; height: 44px; background: rgba(255,255,255,0.2); backdrop-filter: blur(8px);
-      border: 1px solid rgba(255,255,255,0.4); border-radius: 50%; color: white;
-      cursor: pointer; display: flex; justify-content: center; align-items: center;
-      pointer-events: auto; box-shadow: 0 2px 6px rgba(0,0,0,0.5);
-      transition: background 0.3s, transform 0.2s;
-    }
+    #info { position: absolute; top: 10px; left: 10px; right: 180px; font-size: 12px; color: rgba(255,255,255,0.9); z-index: 5; line-height: 1.5; pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,0.8); }
+    #save-btn { position: absolute; top: 12px; right: 116px; z-index: 30; width: 44px; height: 44px; background: rgba(255,255,255,0.2); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.4); border-radius: 50%; color: white; cursor: pointer; display: flex; justify-content: center; align-items: center; pointer-events: auto; box-shadow: 0 2px 6px rgba(0,0,0,0.5); transition: transform 0.2s; }
     #save-btn:active { transform: scale(0.92); }
-
-    #reload-btn {
-      position: absolute; top: 12px; right: 64px; z-index: 30;
-      width: 44px; height: 44px; background: rgba(255,255,255,0.2); backdrop-filter: blur(8px);
-      border: 1px solid rgba(255,255,255,0.4); border-radius: 50%; color: white;
-      cursor: pointer; display: flex; justify-content: center; align-items: center;
-      pointer-events: auto; box-shadow: 0 2px 6px rgba(0,0,0,0.5);
-    }
-
-    #sidebar-toggle {
-      position: absolute; top: 12px; right: 12px; z-index: 30;
-      width: 44px; height: 44px; background: rgba(255,255,255,0.2); backdrop-filter: blur(8px);
-      border: 1px solid rgba(255,255,255,0.4); border-radius: 50%; color: white;
-      cursor: pointer; display: flex; justify-content: center; align-items: center;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.5);
-    }
-
-    #sidebar {
-      position: absolute; top: 0; right: 0; width: 320px; height: 100%;
-      background: rgba(10, 15, 30, 0.95); backdrop-filter: blur(12px);
-      z-index: 25; padding: 60px 20px 20px; box-sizing: border-box;
-      border-left: 1px solid rgba(255,255,255,0.15);
-      display: none; opacity: 0; transform: translateX(100%);
-      transition: opacity 0.25s ease, transform 0.25s ease;
-      flex-direction: column; overflow-y: auto;
-    }
+    #reload-btn { position: absolute; top: 12px; right: 64px; z-index: 30; width: 44px; height: 44px; background: rgba(255,255,255,0.2); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.4); border-radius: 50%; color: white; cursor: pointer; display: flex; justify-content: center; align-items: center; pointer-events: auto; box-shadow: 0 2px 6px rgba(0,0,0,0.5); }
+    #sidebar-toggle { position: absolute; top: 12px; right: 12px; z-index: 30; width: 44px; height: 44px; background: rgba(255,255,255,0.2); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.4); border-radius: 50%; color: white; cursor: pointer; display: flex; justify-content: center; align-items: center; box-shadow: 0 2px 6px rgba(0,0,0,0.5); }
+    #sidebar { position: absolute; top: 0; right: 0; width: 320px; height: 100%; background: rgba(10, 15, 30, 0.95); backdrop-filter: blur(12px); z-index: 25; padding: 60px 20px 20px; box-sizing: border-box; border-left: 1px solid rgba(255,255,255,0.15); display: none; opacity: 0; transform: translateX(100%); transition: opacity 0.25s ease, transform 0.25s ease; flex-direction: column; overflow-y: auto; }
     #sidebar.open { display: flex; opacity: 1; transform: translateX(0); }
-
     .sidebar-header { font-size: 18px; font-weight: bold; margin-bottom: 20px; display: flex; align-items: center; gap: 8px; }
-
     .setting-item { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; font-size: 14px; }
-
     .switch { position: relative; display: inline-block; width: 52px; height: 30px; }
     .switch input { opacity: 0; width: 0; height: 0; }
-    .slider {
-      position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
-      background-color: #b0c4de; transition: .3s; border-radius: 30px;
-    }
-    .slider:before {
-      position: absolute; content: ""; height: 24px; width: 24px; left: 3px; bottom: 3px;
-      background-color: white; transition: .3s; border-radius: 50%;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-    }
+    .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #b0c4de; transition: .3s; border-radius: 30px; }
+    .slider:before { position: absolute; content: ""; height: 24px; width: 24px; left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
     input:checked + .slider { background-color: #2563eb; }
     input:checked + .slider:before { transform: translateX(22px); }
-
-    .accordion-header {
-      font-size: 13px; color: rgba(255,255,255,0.9); margin-bottom: 8px; cursor: pointer;
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 8px 12px; background: rgba(255,255,255,0.08); border-radius: 8px;
-    }
+    .accordion-header { font-size: 13px; color: rgba(255,255,255,0.9); margin-bottom: 8px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: rgba(255,255,255,0.08); border-radius: 8px; }
     .accordion-content { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; border-radius: 8px; background: rgba(0,0,0,0.3); }
     .accordion-content.open { max-height: 240px; overflow-y: auto; margin-bottom: 15px; }
-
     #city-list { border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; }
-    .city-item {
-      padding: 10px 14px; font-size: 13px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.08);
-      display: flex; justify-content: space-between; align-items: center; transition: background 0.2s;
-    }
+    .city-item { padding: 10px 14px; font-size: 13px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: space-between; align-items: center; transition: background 0.2s; }
     .city-item:last-child { border-bottom: none; }
     .city-item:hover { background: rgba(255,255,255,0.15); }
     .city-item.active { background: rgba(37, 99, 235, 0.4); color: #93c5fd; font-weight: bold; }
-    
-    select {
-      background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3);
-      color: white; padding: 4px 8px; border-radius: 4px; outline: none;
-    }
+    select { background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 4px 8px; border-radius: 4px; outline: none; }
     select option { background: #0a0f1e; color: white; }
-
-    .library-item {
-      background: rgba(255,255,255,0.08); border-radius: 8px; padding: 12px;
-      margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px;
-      border: 1px solid rgba(255,255,255,0.1); transition: background 0.2s, border-color 0.2s;
-    }
-    .library-item.playing {
-      border-color: rgba(255, 215, 0, 0.8);
-      background: rgba(255, 215, 0, 0.15);
-    }
+    .library-item { background: rgba(255,255,255,0.08); border-radius: 8px; padding: 12px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px; border: 1px solid rgba(255,255,255,0.1); transition: background 0.2s, border-color 0.2s; }
+    .library-item.playing { border-color: rgba(255, 215, 0, 0.8); background: rgba(255, 215, 0, 0.15); }
     .library-info { display: flex; flex-direction: column; gap: 2px; }
     .library-title { font-size: 13px; font-weight: bold; color: #fff; }
     .library-sub { font-size: 11px; color: rgba(255,255,255,0.6); }
     .library-actions { display: flex; gap: 6px; }
-    .lib-btn {
-      width: 34px; height: 34px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.3);
-      background: rgba(255,255,255,0.15); color: white; cursor: pointer;
-      display: flex; align-items: center; justify-content: center; transition: background 0.2s;
-    }
+    .lib-btn { width: 34px; height: 34px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.15); color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
     .lib-btn:hover { background: rgba(255,255,255,0.3); }
-    .lib-btn.play-btn.playing {
-      background: #f59e0b; border-color: #fbbf24; color: #000;
-    }
+    .lib-btn.play-btn.playing { background: #f59e0b; border-color: #fbbf24; color: #000; }
     .lib-btn.delete-btn:hover { background: rgba(239, 68, 68, 0.4); border-color: #ef4444; }
-
-    .thumb-container {
-      position: relative; width: 100%; height: 130px; border-radius: 6px;
-      overflow: hidden; background: #000; border: 1px solid rgba(255,255,255,0.1);
-      cursor: pointer;
-    }
+    .thumb-container { position: relative; width: 100%; height: 130px; border-radius: 6px; overflow: hidden; background: #000; border: 1px solid rgba(255,255,255,0.1); cursor: pointer; }
     .thumb-img { width: 100%; height: 100%; object-fit: cover; display: block; }
     .thumb-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
-
-    /* 全画面画像モーダル */
-    #image-modal {
-      display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-      background: rgba(0,0,0,0.9); z-index: 100; justify-content: center; align-items: center;
-    }
+    #image-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 100; justify-content: center; align-items: center; }
     #image-modal.active { display: flex; }
     #modal-img { max-width: 95%; max-height: 95%; object-fit: contain; border-radius: 8px; }
   </style>
@@ -154,20 +62,15 @@
   <button id="save-btn" title="現在の星空を保存 (最大5枚)">
     <span class="material-symbols-outlined">star</span>
   </button>
-
   <button id="reload-btn" title="方角・位置を再取得">
     <span class="material-symbols-outlined">refresh</span>
   </button>
-
   <button id="sidebar-toggle" title="設定">
     <span class="material-symbols-outlined" id="toggle-icon">settings</span>
   </button>
 
   <div id="sidebar">
-    <div class="sidebar-header">
-      <span class="material-symbols-outlined">settings</span> 設定
-    </div>
-    
+    <div class="sidebar-header"><span class="material-symbols-outlined">settings</span> 設定</div>
     <div class="setting-item">
       <span>音色タイプ</span>
       <select id="timbre-select">
@@ -176,7 +79,6 @@
         <option value="synth">シンセパッド</option>
       </select>
     </div>
-
     <div class="setting-item">
       <span>手動操作モード</span>
       <label class="switch">
@@ -184,7 +86,6 @@
         <span class="slider"></span>
       </label>
     </div>
-
     <div class="setting-item">
       <span>星座線を表示</span>
       <label class="switch">
@@ -192,28 +93,21 @@
         <span class="slider"></span>
       </label>
     </div>
-
     <div class="accordion-header" id="city-accordion-btn">
       <span style="display:flex; align-items:center; gap:6px;">
         <span class="material-symbols-outlined">location_on</span> 観測地点を選択
       </span>
       <span class="material-symbols-outlined" id="accordion-arrow">expand_more</span>
     </div>
-    <div class="accordion-content" id="city-accordion-content">
-      <div id="city-list"></div>
-    </div>
-
+    <div class="accordion-content" id="city-accordion-content"><div id="city-list"></div></div>
     <hr style="border:0; border-top: 1px solid rgba(255,255,255,0.15); margin: 20px 0;">
-
     <div class="sidebar-header" style="font-size: 16px;">
       <span class="material-symbols-outlined">photo_library</span> 星空ライブラリ (最大5枚)
     </div>
     <div id="library-list"></div>
   </div>
 
-  <div id="image-modal">
-    <img id="modal-img" src="" alt="拡大画像">
-  </div>
+  <div id="image-modal"><img id="modal-img" src="" alt="拡大画像"></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -281,10 +175,7 @@
         if (child.geometry) child.geometry.dispose();
         if (child.material) {
           if (Array.isArray(child.material)) {
-            child.material.forEach(m => {
-              if (m.map) m.map.dispose();
-              m.dispose();
-            });
+            child.material.forEach(m => { if (m.map) m.map.dispose(); m.dispose(); });
           } else {
             if (child.material.map) child.material.map.dispose();
             child.material.dispose();
@@ -410,142 +301,6 @@
       return new THREE.Vector3(x, y, z);
     }
 
-    function rev(deg) { return deg - Math.floor(deg / 360.0) * 360.0; }
-
-    function getSolarSystemPositions(date) {
-      const d = (date.getTime() / 86400000) - 10957.5;
-      const rad = Math.PI / 180;
-      const deg = 180 / Math.PI;
-
-      const ecl = 23.4393 - 3.563E-7 * d;
-      const eclRad = ecl * rad;
-
-      const w_sun = 282.9404 + 4.70935E-5 * d;
-      const e_sun = 0.016709 - 1.151E-9 * d;
-      const M_sun = rev(356.0470 + 0.9856002585 * d);
-      const E_sun = M_sun + e_sun * deg * Math.sin(M_sun * rad) * (1 + e_sun * Math.cos(M_sun * rad));
-      const xv_sun = Math.cos(E_sun * rad) - e_sun;
-      const yv_sun = Math.sqrt(1.0 - e_sun * e_sun) * Math.sin(E_sun * rad);
-      const r_sun = Math.sqrt(xv_sun * xv_sun + yv_sun * yv_sun);
-      const v_sun = Math.atan2(yv_sun, xv_sun) * deg;
-      const lon_sun = rev(v_sun + w_sun);
-
-      const xs = r_sun * Math.cos(lon_sun * rad);
-      const ys = r_sun * Math.sin(lon_sun * rad);
-
-      const N_moon = rev(125.1228 - 0.0529538083 * d);
-      const i_moon = 5.1454;
-      const w_moon = rev(318.0634 + 0.1643573223 * d);
-      const a_moon = 60.2666;
-      const e_moon = 0.054900;
-      const M_moon = rev(115.3654 + 13.0649929509 * d);
-
-      const E_m = M_moon + e_moon * deg * Math.sin(M_moon * rad) * (1 + e_moon * Math.cos(M_moon * rad));
-      const xv_m = a_moon * (Math.cos(E_m * rad) - e_moon);
-      const yv_m = a_moon * Math.sqrt(1.0 - e_moon * e_moon) * Math.sin(E_m * rad);
-      const v_m = Math.atan2(yv_m, xv_m) * deg;
-      const r_m = Math.sqrt(xv_m * xv_m + yv_m * yv_m);
-
-      const xh_m = r_m * (Math.cos(N_moon * rad) * Math.cos((v_m + w_moon) * rad) - Math.sin(N_moon * rad) * Math.sin((v_m + w_moon) * rad) * Math.cos(i_moon * rad));
-      const yh_m = r_m * (Math.sin(N_moon * rad) * Math.cos((v_m + w_moon) * rad) + Math.cos(N_moon * rad) * Math.sin((v_m + w_moon) * rad) * Math.cos(i_moon * rad));
-      const zh_m = r_m * (Math.sin((v_m + w_moon) * rad) * Math.sin(i_moon * rad));
-
-      const moon_xe = xh_m;
-      const moon_ye = yh_m * Math.cos(eclRad) - zh_m * Math.sin(eclRad);
-      const moon_ze = yh_m * Math.sin(eclRad) + zh_m * Math.cos(eclRad);
-
-      const moonRa = rev(Math.atan2(moon_ye, moon_xe) * deg) / 15;
-      const moonDec = Math.atan2(moon_ze, Math.sqrt(moon_xe * moon_xe + moon_ye * moon_ye)) * deg;
-
-      const sun_xe = xs;
-      const sun_ye = ys * Math.cos(eclRad);
-      const sun_ze = ys * Math.sin(eclRad);
-      const sunRa = rev(Math.atan2(sun_ye, sun_xe) * deg) / 15;
-      const sunDec = Math.atan2(sun_ze, Math.sqrt(sun_xe * sun_xe + sun_ye * sun_ye)) * deg;
-
-      const bodies = [
-        { name: "太陽", ra: sunRa, dec: sunDec, color: "#ffeeaa", mag: -26.7 },
-        { name: "月",   ra: moonRa, dec: moonDec, color: "#eef8ff", mag: -12.5 }
-      ];
-
-      const planetsData = [
-        { name: "水星", N: 48.3313 + 3.24587E-5*d, i: 7.0047 + 5.00E-8*d, w: 29.1241 + 1.01444E-5*d, a: 0.387098, e: 0.205635 + 5.59E-10*d, M: 168.6562 + 4.0923344368*d, color: "#b5a7a7", mag: -0.4 },
-        { name: "金星", N: 76.6799 + 2.46590E-5*d, i: 3.3946 + 2.75E-8*d, w: 54.8910 + 1.38374E-5*d, a: 0.723330, e: 0.006773 - 1.302E-9*d, M: 48.0052 + 1.6021302244*d, color: "#ffea88", mag: -4.4 },
-        { name: "火星", N: 49.5574 + 2.11081E-5*d, i: 1.8497 - 1.78E-8*d, w: 286.5016 + 2.92961E-5*d, a: 1.523688, e: 0.093405 + 2.516E-9*d, M: 18.6021 + 0.5240207766*d, color: "#ff6644", mag: -1.5 },
-        { name: "木星", N: 100.4542 + 2.76854E-5*d, i: 1.3030 - 1.557E-7*d, w: 273.8777 + 1.64505E-5*d, a: 5.20256, e: 0.048498 + 4.469E-9*d, M: 19.8950 + 0.0830853001*d, color: "#ffcc88", mag: -2.5 },
-        { name: "土星", N: 113.6655 + 2.38980E-5*d, i: 2.4886 - 1.081E-7*d, w: 339.3939 + 2.97661E-5*d, a: 9.55475, e: 0.055546 - 9.499E-9*d, M: 316.9670 + 0.0334442282*d, color: "#f4d090", mag: 0.2 },
-        { name: "天王星", N: 74.0005 + 1.3978E-5*d, i: 0.7733 + 1.9E-8*d, w: 96.6612 + 3.0565E-5*d, a: 19.18171 - 1.55E-8*d, e: 0.047318 + 7.45E-9*d, M: 142.5905 + 0.011725806*d, color: "#aaffee", mag: 5.7 },
-        { name: "海王星", N: 131.7806 + 3.0173E-5*d, i: 1.7700 - 2.55E-7*d, w: 272.8461 - 6.027E-6*d, a: 30.05826 + 3.313E-8*d, e: 0.008606 + 2.15E-9*d, M: 260.2471 + 0.005995147*d, color: "#5588ff", mag: 7.8 }
-      ];
-
-      planetsData.forEach(p => {
-        const N = rev(p.N), i = p.i, w = rev(p.w), a = p.a, e = p.e, M = rev(p.M);
-        let E = M + e * deg * Math.sin(M * rad) * (1 + e * Math.cos(M * rad));
-        for (let k = 0; k < 3; k++) {
-          E = E - (E - e * deg * Math.sin(E * rad) - M) / (1 - e * Math.cos(E * rad));
-        }
-
-        const xv = a * (Math.cos(E * rad) - e);
-        const yv = a * Math.sqrt(1.0 - e * e) * Math.sin(E * rad);
-        const v = Math.atan2(yv, xv) * deg;
-        const r = Math.sqrt(xv * xv + yv * yv);
-
-        const xh = r * (Math.cos(N * rad) * Math.cos((v + w) * rad) - Math.sin(N * rad) * Math.sin((v + w) * rad) * Math.cos(i * rad));
-        const yh = r * (Math.sin(N * rad) * Math.cos((v + w) * rad) + Math.cos(N * rad) * Math.sin((v + w) * rad) * Math.cos(i * rad));
-        const zh = r * (Math.sin((v + w) * rad) * Math.sin(i * rad));
-
-        const xg = xh + xs, yg = yh + ys, zg = zh;
-        const xe = xg, ye = yg * Math.cos(eclRad) - zg * Math.sin(eclRad), ze = yg * Math.sin(eclRad) + zg * Math.cos(eclRad);
-
-        bodies.push({
-          name: p.name,
-          ra: rev(Math.atan2(ye, xe) * deg) / 15,
-          dec: Math.atan2(ze, Math.sqrt(xe * xe + ye * ye)) * deg,
-          color: p.color,
-          mag: p.mag
-        });
-      });
-
-      return bodies;
-    }
-
-    function createGlowTexture(colorHex) {
-      const canvas = document.createElement('canvas');
-      canvas.width = 128; canvas.height = 128;
-      const ctx = canvas.getContext('2d');
-      const gradient = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
-      gradient.addColorStop(0.0, '#ffffff');
-      gradient.addColorStop(0.2, colorHex);
-      gradient.addColorStop(0.5, colorHex);
-      gradient.addColorStop(1.0, 'rgba(0,0,0,0)');
-      ctx.fillStyle = gradient;
-      ctx.beginPath(); ctx.arc(64, 64, 64, 0, Math.PI * 2); ctx.fill();
-      return new THREE.CanvasTexture(canvas);
-    }
-
-    function createTextSprite(text, colorCss) {
-      const canvas = document.createElement('canvas');
-      canvas.width = 256; canvas.height = 128;
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-      if (ctx.roundRect) {
-        ctx.beginPath(); ctx.roundRect(16, 24, 224, 80, 16); ctx.fill();
-        ctx.strokeStyle = colorCss; ctx.lineWidth = 3; ctx.stroke();
-      } else {
-        ctx.fillRect(16, 24, 224, 80);
-      }
-      ctx.font = 'Bold 40px sans-serif';
-      ctx.fillStyle = colorCss;
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(text, 128, 64);
-
-      const texture = new THREE.CanvasTexture(canvas);
-      const spriteMaterial = new THREE.SpriteMaterial({ map: texture, transparent: true, opacity: 0.95 });
-      const sprite = new THREE.Sprite(spriteMaterial);
-      sprite.scale.set(4, 2, 1);
-      return sprite;
-    }
-
     function updateCanvasSize() {
       const width = window.visualViewport ? window.visualViewport.width : window.innerWidth;
       const height = window.visualViewport ? window.visualViewport.height : window.innerHeight;
@@ -557,7 +312,6 @@
 
     function setupZoomControls() {
       const dom = renderer.domElement;
-
       const getDistance = (e) => {
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
@@ -625,11 +379,6 @@
       if (window.visualViewport) {
         window.visualViewport.addEventListener('resize', updateCanvasSize);
       }
-
-      window.addEventListener('orientationchange', () => {
-        screenOrientation = window.orientation || 0;
-        setTimeout(updateCanvasSize, 200);
-      });
     }
 
     function setupSensorSync() {
@@ -698,9 +447,7 @@
     function requestSensorPermission() {
       if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
         DeviceOrientationEvent.requestPermission().then(state => {
-          if (state === 'granted') {
-            sensorEl.innerText = "モード: ジャイロ連動中";
-          }
+          if (state === 'granted') sensorEl.innerText = "モード: ジャイロ連動中";
         }).catch(() => {});
       }
     }
@@ -711,29 +458,9 @@
         if (mag < 3.5) return 7.0;
         return 4.0;
       }
-
-      const table = [
-        [-1.5, 30.0],
-        [ 0.0, 19.5],
-        [ 1.0, 12.5],
-        [ 2.0,  8.25],
-        [ 3.0,  4.5],
-        [ 6.0,  2.8],
-        [ 8.5,  2.0]
-      ];
-
-      if (mag <= table[0][0]) return table[0][1];
-      if (mag >= table[table.length - 1][0]) return table[table.length - 1][0];
-
-      for (let i = 0; i < table.length - 1; i++) {
-        const [m1, s1] = table[i];
-        const [m2, s2] = table[i + 1];
-        if (mag >= m1 && mag <= m2) {
-          const t = (mag - m1) / (m2 - m1);
-          return s1 + t * (s2 - s1);
-        }
-      }
-      return 2.0;
+      if (mag <= -1.5) return 30.0;
+      if (mag >= 8.5) return 2.0;
+      return 2.0 + (8.5 - mag) * 1.5;
     }
 
     function buildRealStarField() {
@@ -742,12 +469,7 @@
       if (starMesh) {
         scene.remove(starMesh);
         if (starMesh.geometry) starMesh.geometry.dispose();
-        if (starMesh.material) {
-          if (starMesh.material.uniforms && starMesh.material.uniforms.pointTexture.value) {
-            starMesh.material.uniforms.pointTexture.value.dispose();
-          }
-          starMesh.material.dispose();
-        }
+        if (starMesh.material) starMesh.material.dispose();
         starMesh = null;
       }
 
@@ -770,10 +492,6 @@
         const normMag = Math.max(-1.5, Math.min(8.5, star.mag));
         const magRatio = 1.0 - (normMag + 1.5) / 10.0;
         let baseOpacity = 0.50 + Math.pow(magRatio, 1.5) * 0.50;
-
-        if (star.isConstellationStar) {
-          baseOpacity = Math.min(1.0, baseOpacity + 0.05);
-        }
 
         opacities.push(baseOpacity);
         mags.push(star.mag);
@@ -803,15 +521,8 @@
           
           void main() {
             vColor = mix(color, vec3(1.0, 1.0, 1.0), aFlash * 0.7);
-            
             float zoomFactor = smoothstep(75.0, 20.0, uFov);
-
-            if (aMag > 5.0) {
-              vOpacity = (aOpacity + aFlash * 0.5) * zoomFactor;
-            } else {
-              vOpacity = min(1.0, aOpacity + aFlash * 0.5);
-            }
-
+            vOpacity = (aMag > 5.0) ? (aOpacity + aFlash * 0.5) * zoomFactor : min(1.0, aOpacity + aFlash * 0.5);
             vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
             float currentSize = aSize * (1.0 + aFlash * 2.5);
             gl_PointSize = currentSize * (180.0 / -mvPosition.z);
@@ -837,57 +548,6 @@
       
       starMesh = new THREE.Points(geometry, shaderMaterial);
       scene.add(starMesh);
-
-      buildSolarSystem(now);
-      buildConstellations(now);
-    }
-
-    function buildConstellations(now) {
-      clearGroup(constellationGroup);
-      if (!showConstellations || !constellationLinesData.length) return;
-
-      const radius = 99;
-      const lineMaterial = new THREE.LineBasicMaterial({ color: 0x66aaff, transparent: true, opacity: 0.6 });
-
-      constellationLinesData.forEach(feature => {
-        const geometry = feature.geometry;
-        const lines = geometry.type === 'MultiLineString' ? geometry.coordinates : [geometry.coordinates];
-
-        lines.forEach(line => {
-          const points = [];
-          line.forEach(pt => {
-            const pos = raDecToAltAz(pt[0] / 15, pt[1], userLat, userLon, now);
-            points.push(altAzToVector3(pos.alt, pos.az, radius));
-          });
-
-          if (points.length > 1) {
-            const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
-            constellationGroup.add(new THREE.Line(lineGeometry, lineMaterial));
-          }
-        });
-      });
-    }
-
-    function buildSolarSystem(date) {
-      clearGroup(solarSystemGroup);
-
-      const radius = 98;
-      getSolarSystemPositions(date).forEach(body => {
-        const pos = raDecToAltAz(body.ra, body.dec, date ? date : new Date());
-        const vec = altAzToVector3(pos.alt, pos.az, radius);
-
-        let baseSize = body.mag < -10 ? 3.5 : (body.mag < -2 ? 2.5 : 1.8);
-
-        const spriteMat = new THREE.SpriteMaterial({ map: createGlowTexture(body.color), transparent: true, blending: THREE.AdditiveBlending });
-        const sprite = new THREE.Sprite(spriteMat);
-        sprite.position.copy(vec);
-        sprite.scale.set(baseSize, baseSize, 1.0);
-        solarSystemGroup.add(sprite);
-
-        const label = createTextSprite(body.name, body.color);
-        label.position.set(vec.x, vec.y + (baseSize * 0.3 + 1.0), vec.z);
-        solarSystemGroup.add(label);
-      });
     }
 
     function fetchCurrentLocation() {
@@ -898,71 +558,40 @@
             userLat = position.coords.latitude;
             userLon = position.coords.longitude;
             cityName = "現在地（GPS）";
-            locationEl.innerText = `観測地: ${cityName} (北緯${userLat.toFixed(1)}° 東経${userLon.toFixed(1)}°)`;
-            if (realStarsData.length > 0) buildRealStarField();
-            renderCityList();
-          },
-          (error) => {
-            console.warn("位置情報の取得に失敗しました。デフォルト位置（東京）を使用します。", error);
-            userLat = 35.6812;
-            userLon = 139.7671;
-            cityName = "東京 (デフォルト)";
             locationEl.innerText = `観測地: ${cityName}`;
             if (realStarsData.length > 0) buildRealStarField();
-            renderCityList();
           },
-          { timeout: 10000, maximumAge: 60000 }
+          () => {
+            userLat = 35.6812; userLon = 139.7671; cityName = "東京 (デフォルト)";
+            locationEl.innerText = `観測地: ${cityName}`;
+            if (realStarsData.length > 0) buildRealStarField();
+          }
         );
-      } else {
-        locationEl.innerText = `観測地: ${cityName}`;
       }
     }
 
     function initAudioContext() {
-      if (!audioCtx) {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      }
-      if (audioCtx.state === 'suspended') {
-        audioCtx.resume();
-      }
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
     }
 
     function scheduleStarSound(freq, volume, startTime) {
       if (!audioCtx) return;
-
       const osc = audioCtx.createOscillator();
       const gainNode = audioCtx.createGain();
       const duration = currentTimbre === 'synth' ? 2.5 : 1.8;
 
       osc.frequency.setValueAtTime(freq, startTime);
+      osc.type = currentTimbre === 'piano' ? 'triangle' : 'sine';
 
-      if (currentTimbre === 'kalimba') {
-        osc.type = 'sine';
-        gainNode.gain.setValueAtTime(0.0001, startTime);
-        gainNode.gain.linearRampToValueAtTime(volume * 0.35, startTime + 0.005);
-        gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + 1.5);
-      } else if (currentTimbre === 'piano') {
-        osc.type = 'triangle';
-        gainNode.gain.setValueAtTime(0.0001, startTime);
-        gainNode.gain.linearRampToValueAtTime(volume * 0.45, startTime + 0.01);
-        gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + 1.2);
-      } else {
-        osc.type = 'sine';
-        gainNode.gain.setValueAtTime(0.0001, startTime);
-        gainNode.gain.linearRampToValueAtTime(volume * 0.25, startTime + 0.2);
-        gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + 2.5);
-      }
+      gainNode.gain.setValueAtTime(0.0001, startTime);
+      gainNode.gain.linearRampToValueAtTime(volume * 0.4, startTime + 0.01);
+      gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
       osc.connect(gainNode);
       gainNode.connect(audioCtx.destination);
-
       osc.start(startTime);
       osc.stop(startTime + duration);
-
-      osc.onended = () => {
-        osc.disconnect();
-        gainNode.disconnect();
-      };
     }
 
     function triggerStarFlash(starIndex) {
@@ -978,7 +607,6 @@
       const canvas = document.getElementById(`thumb-canvas-${itemId}`);
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
-
       if (canvas.width !== canvas.clientWidth || canvas.height !== canvas.clientHeight) {
         canvas.width = canvas.clientWidth;
         canvas.height = canvas.clientHeight;
@@ -986,9 +614,7 @@
 
       const x = normX * canvas.width;
       const y = normY * canvas.height;
-
-      let radius = 2;
-      let opacity = 1.0;
+      let radius = 2, opacity = 1.0;
 
       function draw() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -998,91 +624,53 @@
         ctx.shadowColor = '#ffffff';
         ctx.shadowBlur = 8;
         ctx.fill();
-
         radius += 1.2;
         opacity -= 0.08;
-
-        if (opacity > 0) {
-          requestAnimationFrame(draw);
-        } else {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-        }
+        if (opacity > 0) requestAnimationFrame(draw);
+        else ctx.clearRect(0, 0, canvas.width, canvas.height);
       }
       draw();
-    }
-
-    function resetFlashBoosts() {
-      if (!starMesh || !starMesh.geometry || !starMesh.geometry.attributes.aFlash) return;
-      const flashArr = starMesh.geometry.attributes.aFlash.array;
-      flashArr.fill(0.0);
-      starMesh.geometry.attributes.aFlash.needsUpdate = true;
     }
 
     function stopMusicPlayback() {
       isPlayingMusic = false;
       currentPlayingId = null;
       currentPlaybackList = [];
-
-      resetFlashBoosts();
       renderLibrary();
-
-      if (sensorEl) {
-        sensorEl.innerText = isManualMode ? "モード: 手動ドラッグ操作中" : "モード: ジャイロ連動中";
-      }
-
-      if (orbitControls) {
-        orbitControls.enabled = isManualMode;
-        orbitControls.update();
-      }
     }
 
     function playLibraryItem(id) {
       initAudioContext();
-
       if (currentPlayingId === id) {
         stopMusicPlayback();
         return;
       }
-
-      stopMusicPlayback();
 
       const item = savedLibrary.find(x => x.id === id);
       if (!item || !item.stars || item.stars.length === 0) return;
 
       isPlayingMusic = true;
       currentPlayingId = id;
-
       currentPlaybackList = [...item.stars];
-
       playbackStarIndex = 0;
       nextNoteTime = audioCtx.currentTime + 0.05;
 
       renderLibrary();
-
-      if (sensorEl) {
-        sensorEl.innerText = `♪ ライブラリ演奏中: ${item.title}`;
-      }
     }
 
     function updateAudioScheduler() {
       if (!isPlayingMusic || !audioCtx || !currentPlaybackList || currentPlaybackList.length === 0) return;
 
-      // 現在時間よりスケジュールが遅れすぎている場合の補正
       if (nextNoteTime < audioCtx.currentTime) {
         nextNoteTime = audioCtx.currentTime + 0.05;
       }
 
-      // ルックアヘッドウィンドウ（0.2秒先まで予約）
       while (nextNoteTime < audioCtx.currentTime + 0.2) {
-        const safeIndex = playbackStarIndex % currentPlaybackList.length;
-        const star = currentPlaybackList[safeIndex];
-
+        const star = currentPlaybackList[playbackStarIndex];
         if (star) {
           const normMag = Math.max(-1.5, Math.min(8.5, star.mag));
           const volume = Math.max(0.25, 0.8 - ((normMag + 1.5) / 10.0) * 0.55);
-
-          const bv = star.bv !== undefined ? star.bv : 0.4;
-          const clampedBv = Math.max(-0.3, Math.min(1.6, bv));
+          const clampedBv = Math.max(-0.3, Math.min(1.6, star.bv !== undefined ? star.bv : 0.4));
           const colorRatio = 1.0 - (clampedBv + 0.3) / 1.9;
           const scaleIndex = Math.floor(colorRatio * (fNaturalMinorScale.length - 1));
           const freq = fNaturalMinorScale[scaleIndex];
@@ -1090,24 +678,15 @@
           scheduleStarSound(freq, volume, nextNoteTime);
 
           const delayMs = Math.max(0, (nextNoteTime - audioCtx.currentTime) * 1000);
-          
-          if (star.origIndex !== undefined) {
-            const targetIndex = star.origIndex;
-            setTimeout(() => {
-              if (isPlayingMusic) triggerStarFlash(targetIndex);
-            }, delayMs);
-          }
+          const pId = currentPlayingId;
+          const nx = star.normX, ny = star.normY;
 
-          if (star.normX !== undefined && star.normY !== undefined && currentPlayingId) {
-            const pId = currentPlayingId;
-            const nx = star.normX;
-            const ny = star.normY;
-            setTimeout(() => {
-              if (isPlayingMusic && currentPlayingId === pId) {
-                triggerThumbnailFlash(pId, nx, ny);
-              }
-            }, delayMs);
-          }
+          setTimeout(() => {
+            if (isPlayingMusic && currentPlayingId === pId) {
+              triggerThumbnailFlash(pId, nx, ny);
+              if (star.origIndex !== undefined) triggerStarFlash(star.origIndex);
+            }
+          }, delayMs);
         }
 
         nextNoteTime += 0.25 + Math.random() * 0.08;
@@ -1117,34 +696,7 @@
 
     function animate(nowTime) {
       requestAnimationFrame(animate);
-
       updateAudioScheduler();
-
-      if (starMesh && starMesh.material && starMesh.material.uniforms && starMesh.material.uniforms.uFov) {
-        starMesh.material.uniforms.uFov.value = camera.fov;
-      }
-
-      if (starMesh && starMesh.geometry && starMesh.geometry.attributes && starMesh.geometry.attributes.aFlash) {
-        const flashArr = starMesh.geometry.attributes.aFlash.array;
-        let needsUpdate = false;
-        for (let i = 0; i < flashArr.length; i++) {
-          if (flashArr[i] > 0) {
-            flashArr[i] -= 0.05;
-            if (flashArr[i] < 0) flashArr[i] = 0;
-            needsUpdate = true;
-          }
-        }
-        if (needsUpdate) {
-          starMesh.geometry.attributes.aFlash.needsUpdate = true;
-        }
-      }
-
-      if (nowTime - lastCalcTime > 60000) {
-        if (realStarsData.length > 0 && !isPlayingMusic) {
-          buildRealStarField();
-        }
-        lastCalcTime = nowTime;
-      }
 
       if (isManualMode) {
         if (!isPlayingMusic) orbitControls.update();
@@ -1158,11 +710,7 @@
     function loadLibrary() {
       const data = localStorage.getItem('star_library_data');
       if (data) {
-        try {
-          savedLibrary = JSON.parse(data);
-        } catch(e) {
-          savedLibrary = [];
-        }
+        try { savedLibrary = JSON.parse(data); } catch(e) { savedLibrary = []; }
       }
     }
 
@@ -1170,112 +718,75 @@
       localStorage.setItem('star_library_data', JSON.stringify(savedLibrary));
     }
 
-    function updateVisibleStars() {
-      if (!starMesh || !realStarsData.length) return [];
+    // 画像（サムネイル）上での上から下（normY: 0.0 -> 1.0）へ確実にソートして保存
+    function saveCurrentStarfield() {
+      if (savedLibrary.length >= 5) {
+        alert("ライブラリには最大5枚までしか保存できません。");
+        return;
+      }
 
-      camera.updateMatrixWorld();
+      // レンダリング直後に同期してカメラ座標を計算
+      renderer.render(scene, camera);
       
       const posAttr = starMesh.geometry.attributes.position;
       const worldPos = new THREE.Vector3();
       const projVec = new THREE.Vector3();
-      const stars = [];
+      const visibleStars = [];
 
       for (let i = 0; i < realStarsData.length; i++) {
         worldPos.fromBufferAttribute(posAttr, i);
-
         projVec.copy(worldPos).project(camera);
 
-        if (isNaN(projVec.x) || isNaN(projVec.y) || projVec.z >= 1.0) continue;
+        // 画面の撮影範囲内（-1 〜 +1）のみ抽出
+        if (projVec.z < 1.0 && projVec.x >= -1.0 && projVec.x <= 1.0 && projVec.y >= -1.0 && projVec.y <= 1.0) {
+          // 画像上の座標（normX: 0~1 左から右, normY: 0~1 上から下）
+          const normX = (projVec.x + 1) / 2;
+          const normY = (1 - projVec.y) / 2;
 
-        if (projVec.x >= -1.0 && projVec.x <= 1.0 && projVec.y >= -1.0 && projVec.y <= 1.0) {
-          stars.push({
-            index: i,
-            screenX: projVec.x,
-            screenY: projVec.y,
-            starData: realStarsData[i]
+          visibleStars.push({
+            origIndex: i,
+            mag: realStarsData[i].mag,
+            bv: realStarsData[i].bv,
+            normX: normX,
+            normY: normY
           });
         }
       }
 
-      // 上から下（screenY: 1 → -1）、同じ高さなら左から右（screenX: -1 → 1）へソート
-      stars.sort((a, b) => {
-        const diffY = b.screenY - a.screenY; // 降順
-        if (Math.abs(diffY) > 0.001) {
-          return diffY;
-        }
-        return a.screenX - b.screenX; // 昇順
-      });
-
-      return stars;
-    }
-
-    function saveCurrentStarfield() {
-      if (savedLibrary.length >= 5) {
-        alert("ライブラリには最大5枚までしか保存できません。\n不要な星空を削除してから保存してください。");
-        return;
-      }
-
-      const visibleStars = updateVisibleStars();
       if (visibleStars.length === 0) {
-        alert("視界内に保存できる星が見つかりません。画面を星空に向けて保存してください。");
+        alert("視界内に保存できる星が見つかりません。");
         return;
       }
+
+      // 画像上の上（normYが小さい）から下（normYが大きい）へと確実にソート
+      visibleStars.sort((a, b) => a.normY - b.normY);
 
       const thumbnailData = renderer.domElement.toDataURL('image/jpeg', 0.6);
-
-      const starsData = visibleStars.map(s => ({
-        mag: s.starData.mag,
-        bv: s.starData.bv,
-        normX: (s.screenX + 1) / 2,
-        normY: (1 - s.screenY) / 2,
-        origIndex: s.index
-      }));
-
       const now = new Date();
       const timeStr = `${now.getMonth() + 1}/${now.getDate()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
-      const newItem = {
+      savedLibrary.push({
         id: Date.now().toString(),
         title: `${cityName}`,
         date: timeStr,
         image: thumbnailData,
-        starCount: starsData.length,
-        stars: starsData
-      };
+        starCount: visibleStars.length,
+        stars: visibleStars
+      });
 
-      savedLibrary.push(newItem);
       saveLibraryToStorage();
       renderLibrary();
 
-      const sidebar = document.getElementById('sidebar');
-      const toggleIcon = document.getElementById('toggle-icon');
-      if (!sidebar.classList.contains('open')) {
-        sidebar.classList.add('open');
-        toggleIcon.innerText = 'close';
-      }
-
-      alert("現在の星空と写真をライブラリに保存しました！");
+      document.getElementById('sidebar').classList.add('open');
+      document.getElementById('toggle-icon').innerText = 'close';
+      alert(`星空を保存しました！（演奏数: ${visibleStars.length}音）`);
     }
 
     function deleteLibraryItem(id) {
-      if (currentPlayingId === id) {
-        stopMusicPlayback();
-      }
+      if (currentPlayingId === id) stopMusicPlayback();
       savedLibrary = savedLibrary.filter(item => item.id !== id);
       saveLibraryToStorage();
       renderLibrary();
-    }
-
-    function openModal(imgSrc) {
-      const modal = document.getElementById('image-modal');
-      const modalImg = document.getElementById('modal-img');
-      modalImg.src = imgSrc;
-      modal.classList.add('active');
-    }
-
-    function closeModal() {
-      const modal = document.getElementById('image-modal');
-      modal.classList.remove('active');
     }
 
     function renderLibrary() {
@@ -1283,11 +794,7 @@
       if (!container) return;
 
       if (savedLibrary.length === 0) {
-        container.innerHTML = `
-          <div style="font-size: 12px; color: rgba(255,255,255,0.5); text-align: center; padding: 20px 0;">
-            保存された星空はありません<br>画面右上の★ボタンで保存できます
-          </div>
-        `;
+        container.innerHTML = `<div style="font-size:12px; color:rgba(255,255,255,0.5); text-align:center; padding:20px 0;">保存された星空はありません</div>`;
         return;
       }
 
@@ -1303,133 +810,31 @@
               <div class="library-sub">${item.date}</div>
             </div>
             <div class="library-actions">
-              <button class="lib-btn play-btn ${isPlaying ? 'playing' : ''}" title="${isPlaying ? '停止' : '再生'}">
+              <button class="lib-btn play-btn ${isPlaying ? 'playing' : ''}">
                 <span class="material-symbols-outlined">${isPlaying ? 'pause' : 'music_note'}</span>
               </button>
-              <button class="lib-btn delete-btn" title="削除">
+              <button class="lib-btn delete-btn">
                 <span class="material-symbols-outlined">delete</span>
               </button>
             </div>
           </div>
           <div class="thumb-container">
-            <img class="thumb-img" src="${item.image || ''}" alt="星空のサムネイル">
+            <img class="thumb-img" src="${item.image || ''}">
             <canvas id="thumb-canvas-${item.id}" class="thumb-canvas"></canvas>
           </div>
         `;
 
-        const playBtn = div.querySelector('.play-btn');
-        playBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          playLibraryItem(item.id);
-        });
-
-        const delBtn = div.querySelector('.delete-btn');
-        delBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          deleteLibraryItem(item.id);
-        });
-
-        const thumbContainer = div.querySelector('.thumb-container');
-        thumbContainer.addEventListener('click', () => {
-          if (item.image) {
-            openModal(item.image);
-          }
-        });
-
+        div.querySelector('.play-btn').addEventListener('click', () => playLibraryItem(item.id));
+        div.querySelector('.delete-btn').addEventListener('click', () => deleteLibraryItem(item.id));
         container.appendChild(div);
       });
     }
 
-    const sidebar = document.getElementById('sidebar');
-    const sidebarToggle = document.getElementById('sidebar-toggle');
-    const toggleIcon = document.getElementById('toggle-icon');
-    const manualToggle = document.getElementById('manual-toggle');
-    const constellationToggle = document.getElementById('constellation-toggle');
-    const cityListEl = document.getElementById('city-list');
-    const cityAccordionBtn = document.getElementById('city-accordion-btn');
-    const cityAccordionContent = document.getElementById('city-accordion-content');
-    const accordionArrow = document.getElementById('accordion-arrow');
-    const reloadBtn = document.getElementById('reload-btn');
-    const saveBtn = document.getElementById('save-btn');
-    const timbreSelect = document.getElementById('timbre-select');
-    const imageModal = document.getElementById('image-modal');
-
-    imageModal.addEventListener('click', closeModal);
-
-    saveBtn.addEventListener('click', () => {
-      saveCurrentStarfield();
-    });
-
-    timbreSelect.addEventListener('change', (e) => {
-      currentTimbre = e.target.value;
-    });
-
-    sidebarToggle.addEventListener('click', () => {
-      const isOpening = !sidebar.classList.contains('open');
-      if (isOpening) {
-        sidebar.classList.add('open');
-        toggleIcon.innerText = 'close';
-      } else {
-        sidebar.classList.remove('open');
-        toggleIcon.innerText = 'settings';
-      }
-    });
-
-    reloadBtn.addEventListener('click', () => {
-      fetchCurrentLocation();
-      isHeadingInitialized = false;
-      sensorEl.innerText = "モード: 方角を再取得中...";
-    });
-
-    manualToggle.addEventListener('change', (e) => {
-      isManualMode = e.target.checked;
-      orbitControls.enabled = isManualMode && !isPlayingMusic;
-      if (isManualMode) {
-        const dir = new THREE.Vector3();
-        camera.getWorldDirection(dir);
-        camera.position.copy(dir.multiplyScalar(-0.1));
-        orbitControls.target.set(0, 0, 0);
-        orbitControls.update();
-        sensorEl.innerText = "モード: 手動ドラッグ操作中";
-      } else {
-        sensorEl.innerText = "モード: ジャイロ連動中";
-      }
-    });
-
-    constellationToggle.addEventListener('change', (e) => {
-      showConstellations = e.target.checked;
-      buildConstellations(new Date());
-    });
-
-    cityAccordionBtn.addEventListener('click', () => {
-      cityAccordionContent.classList.toggle('open');
-      accordionArrow.innerText = cityAccordionContent.classList.contains('open') ? 'expand_less' : 'expand_more';
-    });
-
-    function renderCityList() {
-      cityListEl.innerHTML = '';
-      cities.forEach(city => {
-        const item = document.createElement('div');
-        item.className = `city-item ${cityName === city.name ? 'active' : ''}`;
-        item.innerHTML = `<span>${city.name}</span>`;
-
-        item.addEventListener('click', () => {
-          userLat = city.lat;
-          userLon = city.lon;
-          cityName = city.name;
-          locationEl.innerText = `観測地: ${cityName} (北緯${userLat.toFixed(1)}° 東経${userLon.toFixed(1)}°)`;
-          buildRealStarField();
-          renderCityList();
-        });
-
-        cityListEl.appendChild(item);
-      });
-    }
-
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden && isPlayingMusic) {
-        stopMusicPlayback();
-      }
+    document.getElementById('save-btn').addEventListener('click', saveCurrentStarfield);
+    document.getElementById('sidebar-toggle').addEventListener('click', () => {
+      const sb = document.getElementById('sidebar');
+      sb.classList.toggle('open');
+      document.getElementById('toggle-icon').innerText = sb.classList.contains('open') ? 'close' : 'settings';
     });
 
     window.addEventListener('DOMContentLoaded', () => {
@@ -1438,11 +843,6 @@
       renderLibrary();
       requestAnimationFrame(animate);
       fetchCurrentLocation();
-
-      window.addEventListener('click', () => {
-        requestSensorPermission();
-        initAudioContext();
-      }, { once: true });
     });
   </script>
 </body>
