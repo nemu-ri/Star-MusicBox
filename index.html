@@ -1187,13 +1187,12 @@
       for (let i = 0; i < realStarsData.length; i++) {
         worldPos.fromBufferAttribute(posAttr, i);
 
-        // カメラ視野内（Frustum）にあるかチェック
         if (frustum.containsPoint(worldPos)) {
           projVec.copy(worldPos).project(camera);
 
           if (isNaN(projVec.x) || isNaN(projVec.y)) continue;
 
-          // 画面全体 (-1.0 ~ 1.0) の範囲にある全範囲の星を正確に抽出
+          // 画面領域内 (-1.0 ~ 1.0) に収まっている星のみを正しく判定
           if (projVec.x >= -1.0 && projVec.x <= 1.0 && projVec.y >= -1.0 && projVec.y <= 1.0) {
             stars.push({
               index: i,
@@ -1205,7 +1204,7 @@
         }
       }
 
-      // 上から下（screenY降順）へ順番にすべてをソート
+      // 上から下（Y座標降順）かつ左から右（X座標昇順）にソート
       stars.sort((a, b) => {
         if (Math.abs(b.screenY - a.screenY) > 0.001) {
           return b.screenY - a.screenY;
@@ -1230,7 +1229,6 @@
 
       const thumbnailData = renderer.domElement.toDataURL('image/jpeg', 0.6);
 
-      // 全体の星データをノーマライズして保持
       const starsData = visibleStars.map(s => ({
         mag: s.starData.mag,
         bv: s.starData.bv,
