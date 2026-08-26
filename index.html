@@ -97,7 +97,7 @@
     .city-item:hover { background: rgba(255,255,255,0.15); }
     .city-item.active { background: rgba(37, 99, 235, 0.4); color: #93c5fd; font-weight: bold; }
     
-    select {
+    select, input[type="range"] {
       background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3);
       color: white; padding: 4px 8px; border-radius: 4px; outline: none;
     }
@@ -177,6 +177,12 @@
       </select>
     </div>
 
+    <!-- BPM選択 (60〜90) -->
+    <div class="setting-item">
+      <span>オルゴールBPM (<span id="bpm-val">75</span>)</span>
+      <input type="range" id="bpm-slider" min="60" max="90" value="75" step="1" style="width: 100px;">
+    </div>
+
     <div class="setting-item">
       <span>手動操作モード</span>
       <label class="switch">
@@ -245,6 +251,7 @@
     let audioCtx = null;
     let isPlayingMusic = false;
     let currentTimbre = 'kalimba';
+    let currentBpm = 75;
     let currentPlayingId = null;
     let savedLibrary = [];
 
@@ -927,7 +934,8 @@
       }
     }
 
-    function scheduleStarSound(freq, volume, startTime) {
+    // ステレオパンニング（左右定位）対応の音源生成
+    function scheduleStarSound(freq, volume, startTime, pan = 0) {
       if (!audioCtx) return;
 
       const osc = audioCtx.createOscillator();
@@ -954,7 +962,15 @@
       }
 
       osc.connect(gainNode);
-      gainNode.connect(audioCtx.destination);
+
+      if (audioCtx.createStereoPanner) {
+        const panner = audioCtx.createStereoPanner();
+        panner.pan.setValueAtTime(Math.max(-1, Math.min(1, pan)), startTime);
+        gainNode.connect(panner);
+        panner.connect(audioCtx.destination);
+      } else {
+        gainNode.connect(audioCtx.destination);
+      }
 
       osc.start(startTime);
       osc.stop(startTime + duration);
@@ -1052,10 +1068,15 @@
       isPlayingMusic = true;
       currentPlayingId = id;
 
-      currentPlaybackList = [...item.stars];
+      // 保存された全星データをY軸（上から下）の順に確実に並び替え
+      currentPlaybackList = [...item.stars].sort((a, b) => {
+        const diffY = a.normY - b.normY; // 上(0)から下(1)
+        if (Math.abs(diffY) > 0.01) return diffY;
+        return a.normX - b.normX; // 左(0)から右(1)
+      });
 
       playbackStarIndex = 0;
-      nextNoteTime = audioCtx.currentTime + 0.05;
+      nextNoteTime = audioCtx.currentTime + 0.1;
 
       renderLibrary();
 
@@ -1064,6 +1085,7 @@
       }
     }
 
+    // BPMに基づくスキャン再生スケジューラー（全音再生対応）
     function updateAudioScheduler() {
       if (!isPlayingMusic || !audioCtx || !currentPlaybackList || currentPlaybackList.length === 0) return;
 
@@ -1071,24 +1093,32 @@
         nextNoteTime = audioCtx.currentTime + 0.05;
       }
 
-      while (nextNoteTime < audioCtx.currentTime + 0.2) {
-        const safeIndex = playbackStarIndex % currentPlaybackList.length;
-        const star = currentPlaybackList[safeIndex];
+      const beatInterval = 60 / currentBpm;
+
+      while (nextNoteTime < audioCtx.currentTime + 0.25) {
+        if (playbackStarIndex >= currentPlaybackList.length) {
+          // すべての星を鳴らし終えたら最初に戻ってループ演奏
+          playbackStarIndex = 0;
+        }
+
+        const star = currentPlaybackList[playbackStarIndex];
 
         if (star) {
           const normMag = Math.max(-1.5, Math.min(8.5, star.mag));
           const volume = Math.max(0.25, 0.8 - ((normMag + 1.5) / 10.0) * 0.55);
 
-          const bv = star.bv !== undefined ? star.bv : 0.4;
-          const clampedBv = Math.max(-0.3, Math.min(1.6, bv));
-          const colorRatio = 1.0 - (clampedBv + 0.3) / 1.9;
-          const scaleIndex = Math.floor(colorRatio * (fNaturalMinorScale.length - 1));
+          // X軸の位置をスケールの音高に反映（左＝低温、右＝高音）
+          const normX = star.normX !== undefined ? star.normX : 0.5;
+          const scaleIndex = Math.floor(normX * (fNaturalMinorScale.length - 1));
           const freq = fNaturalMinorScale[scaleIndex];
 
-          scheduleStarSound(freq, volume, nextNoteTime);
+          // 左右のステレオパン（左:-1.0 〜 右:1.0）
+          const pan = (normX - 0.5) * 2.0;
+
+          scheduleStarSound(freq, volume, nextNoteTime, pan);
 
           const delayMs = Math.max(0, (nextNoteTime - audioCtx.currentTime) * 1000);
-
+          
           if (star.origIndex !== undefined) {
             const targetIndex = star.origIndex;
             setTimeout(() => {
@@ -1108,8 +1138,14 @@
           }
         }
 
-        nextNoteTime += 0.25 + Math.random() * 0.08;
-        playbackStarIndex = (playbackStarIndex + 1) % currentPlaybackList.length;
+        // 次の星との縦幅（時間軸差）に応じた間隔（最小0.15拍分開ける）
+        let deltaY = 0.05;
+        if (playbackStarIndex < currentPlaybackList.length - 1) {
+          deltaY = Math.max(0.02, currentPlaybackList[playbackStarIndex + 1].normY - star.normY);
+        }
+        
+        nextNoteTime += Math.max(0.12, deltaY * beatInterval * 4.0);
+        playbackStarIndex++;
       }
     }
 
@@ -1168,65 +1204,80 @@
       localStorage.setItem('star_library_data', JSON.stringify(savedLibrary));
     }
 
-    // 画像上の位置関係（2D）のみでソートして保存する処理
+    function updateVisibleStars() {
+      if (!starMesh || !realStarsData.length) return [];
+
+      camera.updateMatrixWorld();
+      
+      const posAttr = starMesh.geometry.attributes.position;
+      const worldPos = new THREE.Vector3();
+      const projVec = new THREE.Vector3();
+      const stars = [];
+
+      for (let i = 0; i < realStarsData.length; i++) {
+        worldPos.fromBufferAttribute(posAttr, i);
+
+        projVec.copy(worldPos).project(camera);
+
+        if (isNaN(projVec.x) || isNaN(projVec.y) || projVec.z >= 1.0) continue;
+
+        if (projVec.x >= -1.0 && projVec.x <= 1.0 && projVec.y >= -1.0 && projVec.y <= 1.0) {
+          stars.push({
+            index: i,
+            screenX: projVec.x,
+            screenY: projVec.y,
+            starData: realStarsData[i]
+          });
+        }
+      }
+
+      // 上から下（screenY: 1 → -1）、同じ高さなら左から右（screenX: -1 → 1）へソート
+      stars.sort((a, b) => {
+        const diffY = b.screenY - a.screenY; // 降順
+        if (Math.abs(diffY) > 0.001) {
+          return diffY;
+        }
+        return a.screenX - b.screenX; // 昇順
+      });
+
+      return stars;
+    }
+
     function saveCurrentStarfield() {
       if (savedLibrary.length >= 5) {
         alert("ライブラリには最大5枚までしか保存できません。\n不要な星空を削除してから保存してください。");
         return;
       }
 
-      // 最新の描画結果を確保
-      renderer.render(scene, camera);
-
-      if (!starMesh || !realStarsData.length) return;
-      
-      const posAttr = starMesh.geometry.attributes.position;
-      const worldPos = new THREE.Vector3();
-      const projVec = new THREE.Vector3();
-      const visibleStars = [];
-
-      for (let i = 0; i < realStarsData.length; i++) {
-        worldPos.fromBufferAttribute(posAttr, i);
-        projVec.copy(worldPos).project(camera);
-
-        // 撮影範囲（画面内）にある星を抽出
-        if (projVec.z < 1.0 && projVec.x >= -1.0 && projVec.x <= 1.0 && projVec.y >= -1.0 && projVec.y <= 1.0) {
-          
-          // 画像上の正規化座標（normX: 左0〜右1, normY: 上0〜下1）へ換算
-          const normX = (projVec.x + 1) / 2;
-          const normY = (1 - projVec.y) / 2;
-
-          visibleStars.push({
-            origIndex: i,
-            mag: realStarsData[i].mag,
-            bv: realStarsData[i].bv,
-            normX: normX,
-            normY: normY
-          });
-        }
-      }
-
+      const visibleStars = updateVisibleStars();
       if (visibleStars.length === 0) {
         alert("視界内に保存できる星が見つかりません。画面を星空に向けて保存してください。");
         return;
       }
 
-      // 画像の「上（normY: 0）」から「下（normY: 1）」へ順番に並べ替え
-      visibleStars.sort((a, b) => a.normY - b.normY);
-
       const thumbnailData = renderer.domElement.toDataURL('image/jpeg', 0.6);
+
+      const starsData = visibleStars.map(s => ({
+        mag: s.starData.mag,
+        bv: s.starData.bv,
+        normX: (s.screenX + 1) / 2,
+        normY: (1 - s.screenY) / 2,
+        origIndex: s.index
+      }));
+
       const now = new Date();
       const timeStr = `${now.getMonth() + 1}/${now.getDate()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
-      savedLibrary.push({
+      const newItem = {
         id: Date.now().toString(),
         title: `${cityName}`,
         date: timeStr,
         image: thumbnailData,
-        starCount: visibleStars.length,
-        stars: visibleStars
-      });
+        starCount: starsData.length,
+        stars: starsData
+      };
 
+      savedLibrary.push(newItem);
       saveLibraryToStorage();
       renderLibrary();
 
@@ -1237,7 +1288,7 @@
         toggleIcon.innerText = 'close';
       }
 
-      alert(`現在の星空を保存しました！（${visibleStars.length}音）`);
+      alert("現在の星空と写真をライブラリに保存しました！");
     }
 
     function deleteLibraryItem(id) {
@@ -1335,6 +1386,8 @@
     const reloadBtn = document.getElementById('reload-btn');
     const saveBtn = document.getElementById('save-btn');
     const timbreSelect = document.getElementById('timbre-select');
+    const bpmSlider = document.getElementById('bpm-slider');
+    const bpmVal = document.getElementById('bpm-val');
     const imageModal = document.getElementById('image-modal');
 
     imageModal.addEventListener('click', closeModal);
@@ -1345,6 +1398,11 @@
 
     timbreSelect.addEventListener('change', (e) => {
       currentTimbre = e.target.value;
+    });
+
+    bpmSlider.addEventListener('input', (e) => {
+      currentBpm = parseInt(e.target.value, 10);
+      bpmVal.innerText = currentBpm;
     });
 
     sidebarToggle.addEventListener('click', () => {
