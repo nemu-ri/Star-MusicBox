@@ -723,7 +723,7 @@
       ];
 
       if (mag <= table[0][0]) return table[0][1];
-      if (mag >= table[table.length - 1][0]) return table[table.length - 1][1];
+      if (mag >= table[table.length - 1][0]) return table[table.length - 1][0];
 
       for (let i = 0; i < table.length - 1; i++) {
         const [m1, s1] = table[i];
@@ -1052,6 +1052,7 @@
       isPlayingMusic = true;
       currentPlayingId = id;
 
+      // 保存された星データを直接使用（画面外判定などの影響を受けない）
       currentPlaybackList = [...item.stars];
 
       playbackStarIndex = 0;
@@ -1076,8 +1077,9 @@
         const star = currentPlaybackList[safeIndex];
 
         if (star) {
-          const normMag = Math.max(-1.5, Math.min(6.5, star.mag));
-          const volume = Math.pow(1.0 - (normMag + 1.5) / 8.0, 1.5) * 0.7 + 0.1;
+          // 保存画像にある暗い星（6等星など）でも音量を確保して均一に演奏
+          const normMag = Math.max(-1.5, Math.min(8.5, star.mag));
+          const volume = Math.max(0.25, 0.8 - ((normMag + 1.5) / 10.0) * 0.55);
 
           const bv = star.bv !== undefined ? star.bv : 0.4;
           const clampedBv = Math.max(-0.3, Math.min(1.6, bv));
@@ -1174,11 +1176,6 @@
       camera.updateMatrixWorld();
       camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
 
-      const frustum = new THREE.Frustum();
-      const projScreenMatrix = new THREE.Matrix4();
-      projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
-      frustum.setFromMatrix(projScreenMatrix);
-
       const posAttr = starMesh.geometry.attributes.position;
       const worldPos = new THREE.Vector3();
       const projVec = new THREE.Vector3();
@@ -1187,24 +1184,20 @@
       for (let i = 0; i < realStarsData.length; i++) {
         worldPos.fromBufferAttribute(posAttr, i);
 
-        if (frustum.containsPoint(worldPos)) {
-          projVec.copy(worldPos).project(camera);
+        projVec.copy(worldPos).project(camera);
 
-          if (isNaN(projVec.x) || isNaN(projVec.y)) continue;
+        if (isNaN(projVec.x) || isNaN(projVec.y) || projVec.z >= 1.0) continue;
 
-          // 画面領域内 (-1.0 ~ 1.0) に収まっている星のみを正しく判定
-          if (projVec.x >= -1.0 && projVec.x <= 1.0 && projVec.y >= -1.0 && projVec.y <= 1.0) {
-            stars.push({
-              index: i,
-              screenX: projVec.x,
-              screenY: projVec.y,
-              starData: realStarsData[i]
-            });
-          }
+        if (projVec.x >= -1.0 && projVec.x <= 1.0 && projVec.y >= -1.0 && projVec.y <= 1.0) {
+          stars.push({
+            index: i,
+            screenX: projVec.x,
+            screenY: projVec.y,
+            starData: realStarsData[i]
+          });
         }
       }
 
-      // 上から下（Y座標降順）かつ左から右（X座標昇順）にソート
       stars.sort((a, b) => {
         if (Math.abs(b.screenY - a.screenY) > 0.001) {
           return b.screenY - a.screenY;
