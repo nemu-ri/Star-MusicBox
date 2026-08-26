@@ -228,7 +228,7 @@
     let currentPlayingId = null;
     let savedLibrary = [];
 
-    // 高精度オーディオ再生管理変数
+    // オーディオ再生管理
     let currentPlaybackList = [];
     let playbackStarIndex = 0;
     let nextNoteTime = 0;
@@ -996,13 +996,8 @@
       isPlayingMusic = true;
       currentPlayingId = id;
 
-      // 【修正】画面上部 (screenY: 1.0) から下部 (screenY: -1.0) へ正しくソート
-      // 高さ(Y)が非常に近い場合は左(X)から右(X)へスキャン
-      currentPlaybackList = [...item.stars].sort((a, b) => {
-        const diffY = b.screenY - a.screenY;
-        if (Math.abs(diffY) > 0.05) return diffY;
-        return (a.screenX || 0) - (b.screenX || 0);
-      });
+      // 保存された星リスト（画面上部Y軸降順・X軸昇順に整列済み）を割り当て
+      currentPlaybackList = [...item.stars];
 
       playbackStarIndex = 0;
       nextNoteTime = audioCtx.currentTime + 0.05;
@@ -1014,9 +1009,14 @@
       }
     }
 
-    // シームレス高精度オーディオススケジューラー
+    // シームレス高精度オーディオススケジューラー（フリーズ防止強化）
     function updateAudioScheduler() {
       if (!isPlayingMusic || !audioCtx || currentPlaybackList.length === 0) return;
+
+      // 音が遅れてタイマーが過去に取り残された場合の保護・自動リセット
+      if (nextNoteTime < audioCtx.currentTime) {
+        nextNoteTime = audioCtx.currentTime + 0.05;
+      }
 
       while (nextNoteTime < audioCtx.currentTime + 0.1) {
         const star = currentPlaybackList[playbackStarIndex];
@@ -1075,7 +1075,7 @@
         }
       }
 
-      // 60秒ごとの画面更新（演奏中はスキップしてフリーズ防止）
+      // 60秒ごとの画面更新
       if (nowTime - lastCalcTime > 60000) {
         if (realStarsData.length > 0 && !isPlayingMusic) {
           buildRealStarField();
@@ -1107,6 +1107,7 @@
       localStorage.setItem('star_library_data', JSON.stringify(savedLibrary));
     }
 
+    // 【重要】☆ボタンを押した瞬間に画面に映っている星を取得＆上から順（Y降順/X昇順）にソート
     function updateVisibleStars() {
       if (!starMesh || !realStarsData.length) return [];
 
@@ -1118,6 +1119,7 @@
         projVec.fromBufferAttribute(posAttr, i);
         projVec.project(camera);
 
+        // 画面の視界内 (-1.0 ～ 1.0) かつ カメラの前方 (z < 1.0) にあるかチェック
         if (projVec.x >= -1.0 && projVec.x <= 1.0 && projVec.y >= -1.0 && projVec.y <= 1.0 && projVec.z < 1.0) {
           stars.push({
             index: i,
@@ -1128,6 +1130,13 @@
         }
       }
 
+      // 上から順 (screenYが大きい順) ＆ 同じ高さなら左から右 (screenXが大きい順/小さい順) に整列
+      stars.sort((a, b) => {
+        const diffY = b.screenY - a.screenY;
+        if (Math.abs(diffY) > 0.05) return diffY;
+        return a.screenX - b.screenX;
+      });
+
       return stars;
     }
 
@@ -1137,6 +1146,7 @@
         return;
       }
 
+      // ☆押下時点の「画面内に映る星」を上からスキャン順に抽出
       const visibleStars = updateVisibleStars();
       if (visibleStars.length === 0) {
         alert("視界内に保存できる星が見つかりません。画面を星空に向けて保存してください。");
