@@ -1052,7 +1052,6 @@
       isPlayingMusic = true;
       currentPlayingId = id;
 
-      // 保存された星データを直接使用（画面外判定などの影響を受けない）
       currentPlaybackList = [...item.stars];
 
       playbackStarIndex = 0;
@@ -1068,16 +1067,17 @@
     function updateAudioScheduler() {
       if (!isPlayingMusic || !audioCtx || !currentPlaybackList || currentPlaybackList.length === 0) return;
 
+      // 現在時間よりスケジュールが遅れすぎている場合の補正
       if (nextNoteTime < audioCtx.currentTime) {
         nextNoteTime = audioCtx.currentTime + 0.05;
       }
 
-      while (nextNoteTime < audioCtx.currentTime + 0.1) {
+      // ルックアヘッドウィンドウ（0.2秒先まで予約）
+      while (nextNoteTime < audioCtx.currentTime + 0.2) {
         const safeIndex = playbackStarIndex % currentPlaybackList.length;
         const star = currentPlaybackList[safeIndex];
 
         if (star) {
-          // 保存画像にある暗い星（6等星など）でも音量を確保して均一に演奏
           const normMag = Math.max(-1.5, Math.min(8.5, star.mag));
           const volume = Math.max(0.25, 0.8 - ((normMag + 1.5) / 10.0) * 0.55);
 
@@ -1174,8 +1174,7 @@
       if (!starMesh || !realStarsData.length) return [];
 
       camera.updateMatrixWorld();
-      camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
-
+      
       const posAttr = starMesh.geometry.attributes.position;
       const worldPos = new THREE.Vector3();
       const projVec = new THREE.Vector3();
@@ -1198,11 +1197,13 @@
         }
       }
 
+      // 上から下（screenY: 1 → -1）、同じ高さなら左から右（screenX: -1 → 1）へソート
       stars.sort((a, b) => {
-        if (Math.abs(b.screenY - a.screenY) > 0.001) {
-          return b.screenY - a.screenY;
+        const diffY = b.screenY - a.screenY; // 降順
+        if (Math.abs(diffY) > 0.001) {
+          return diffY;
         }
-        return a.screenX - b.screenX;
+        return a.screenX - b.screenX; // 昇順
       });
 
       return stars;
