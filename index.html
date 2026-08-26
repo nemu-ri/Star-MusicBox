@@ -224,11 +224,14 @@
 
     let audioCtx = null;
     let isPlayingMusic = false;
-    let bgmIntervalId = null;
-    let activeTimeouts = [];
     let currentTimbre = 'kalimba';
     let currentPlayingId = null;
     let savedLibrary = [];
+
+    // 高精度オーディオ再生管理変数
+    let currentPlaybackList = [];
+    let playbackStarIndex = 0;
+    let nextNoteTime = 0;
 
     const fNaturalMinorScale = [
       174.61, 196.00, 207.65, 233.08, 261.63, 277.18, 311.13,
@@ -252,7 +255,6 @@
       { name: "ホノルル", lat: 21.3069, lon: -157.8583 }
     ];
 
-    // メモリ安全なグループ削除ヘルパー
     function clearGroup(group) {
       while (group.children.length > 0) {
         const child = group.children[0];
@@ -718,7 +720,6 @@
     function buildRealStarField() {
       if (!realStarsData.length) return;
       
-      // メモリ解放を追加（固まり現象を防止）
       if (starMesh) {
         scene.remove(starMesh);
         if (starMesh.geometry) starMesh.geometry.dispose();
@@ -870,43 +871,6 @@
       });
     }
 
-    function animate(nowTime) {
-      requestAnimationFrame(animate);
-
-      if (starMesh && starMesh.material && starMesh.material.uniforms && starMesh.material.uniforms.uFov) {
-        starMesh.material.uniforms.uFov.value = camera.fov;
-      }
-
-      if (starMesh && starMesh.geometry && starMesh.geometry.attributes && starMesh.geometry.attributes.aFlash) {
-        const flashArr = starMesh.geometry.attributes.aFlash.array;
-        let needsUpdate = false;
-        for (let i = 0; i < flashArr.length; i++) {
-          if (flashArr[i] > 0) {
-            flashArr[i] -= 0.05;
-            if (flashArr[i] < 0) flashArr[i] = 0;
-            needsUpdate = true;
-          }
-        }
-        if (needsUpdate) {
-          starMesh.geometry.attributes.aFlash.needsUpdate = true;
-        }
-      }
-
-      // 画面のチラつき・固まりを防ぐため、全更新の間隔を10秒から60秒に伸ばして軽量化
-      if (nowTime - lastCalcTime > 60000) {
-        if (realStarsData.length > 0) buildRealStarField();
-        lastCalcTime = nowTime;
-      }
-
-      if (isManualMode) {
-        if (!isPlayingMusic) orbitControls.update();
-      } else {
-        updateCameraOrientation();
-      }
-
-      renderer.render(scene, camera);
-    }
-
     function fetchCurrentLocation() {
       locationEl.innerText = `観測地: 現在地を取得中...`;
       if ("geolocation" in navigator) {
@@ -998,40 +962,10 @@
       starMesh.geometry.attributes.aFlash.needsUpdate = true;
     }
 
-    function updateVisibleStars() {
-      if (!starMesh || !realStarsData.length) return [];
-
-      const projVec = new THREE.Vector3();
-      const posAttr = starMesh.geometry.attributes.position;
-      const stars = [];
-
-      for (let i = 0; i < realStarsData.length; i++) {
-        projVec.fromBufferAttribute(posAttr, i);
-        projVec.project(camera);
-
-        if (projVec.x >= -1.0 && projVec.x <= 1.0 && projVec.y >= -1.0 && projVec.y <= 1.0 && projVec.z < 1.0) {
-          stars.push({
-            index: i,
-            screenY: projVec.y,
-            starData: realStarsData[i]
-          });
-        }
-      }
-
-      stars.sort((a, b) => b.screenY - a.screenY);
-      return stars;
-    }
-
     function stopMusicPlayback() {
       isPlayingMusic = false;
       currentPlayingId = null;
-
-      if (bgmIntervalId) {
-        clearInterval(bgmIntervalId);
-        bgmIntervalId = null;
-      }
-      activeTimeouts.forEach(id => clearTimeout(id));
-      activeTimeouts = [];
+      currentPlaybackList = [];
 
       resetFlashBoosts();
       renderLibrary();
@@ -1062,53 +996,97 @@
       isPlayingMusic = true;
       currentPlayingId = id;
 
+      // 配列の安全なソート
+      currentPlaybackList = [...item.stars].sort((a, b) => {
+        if (a.screenY === b.screenY) return (a.origIndex || 0) - (b.origIndex || 0);
+        return (b.screenY || 0) - (a.screenY || 0);
+      });
+      playbackStarIndex = 0;
+      nextNoteTime = audioCtx.currentTime + 0.05;
+
       renderLibrary();
 
       if (sensorEl) {
         sensorEl.innerText = `♪ ライブラリ演奏中: ${item.title}`;
       }
+    }
 
-      let starIndex = 0;
-      let nextNoteTime = audioCtx.currentTime + 0.1;
+    // シームレス高精度オーディオススケジューラー
+    function updateAudioScheduler() {
+      if (!isPlayingMusic || !audioCtx || currentPlaybackList.length === 0) return;
 
-      bgmIntervalId = setInterval(() => {
-        if (!isPlayingMusic) return;
+      while (nextNoteTime < audioCtx.currentTime + 0.1) {
+        const star = currentPlaybackList[playbackStarIndex];
 
-        if (nextNoteTime < audioCtx.currentTime) {
-          nextNoteTime = audioCtx.currentTime + 0.1;
+        const normMag = Math.max(-1.5, Math.min(6.5, star.mag));
+        const volume = Math.pow(1.0 - (normMag + 1.5) / 8.0, 1.5) * 0.7 + 0.1;
+
+        const bv = star.bv !== undefined ? star.bv : 0.4;
+        const clampedBv = Math.max(-0.3, Math.min(1.6, bv));
+        const colorRatio = 1.0 - (clampedBv + 0.3) / 1.9;
+        const scaleIndex = Math.floor(colorRatio * (fNaturalMinorScale.length - 1));
+        const freq = fNaturalMinorScale[scaleIndex];
+
+        // 予約発音
+        scheduleStarSound(freq, volume, nextNoteTime);
+
+        // ビジュアル（発音に合わせたフラッシュ）
+        if (star.origIndex !== undefined) {
+          const delayMs = Math.max(0, (nextNoteTime - audioCtx.currentTime) * 1000);
+          const targetIndex = star.origIndex;
+          setTimeout(() => {
+            if (isPlayingMusic) triggerStarFlash(targetIndex);
+          }, delayMs);
         }
 
-        while (nextNoteTime < audioCtx.currentTime + 1.0) {
-          if (starIndex >= item.stars.length) {
-            starIndex = 0;
+        // 次の音のタイマー加算
+        nextNoteTime += 0.30 + Math.random() * 0.10;
+
+        // 星全体を再生し終わったら最初に戻る（シームレス無限ループ）
+        playbackStarIndex = (playbackStarIndex + 1) % currentPlaybackList.length;
+      }
+    }
+
+    function animate(nowTime) {
+      requestAnimationFrame(animate);
+
+      // オーディオススケジューラー更新
+      updateAudioScheduler();
+
+      if (starMesh && starMesh.material && starMesh.material.uniforms && starMesh.material.uniforms.uFov) {
+        starMesh.material.uniforms.uFov.value = camera.fov;
+      }
+
+      if (starMesh && starMesh.geometry && starMesh.geometry.attributes && starMesh.geometry.attributes.aFlash) {
+        const flashArr = starMesh.geometry.attributes.aFlash.array;
+        let needsUpdate = false;
+        for (let i = 0; i < flashArr.length; i++) {
+          if (flashArr[i] > 0) {
+            flashArr[i] -= 0.05;
+            if (flashArr[i] < 0) flashArr[i] = 0;
+            needsUpdate = true;
           }
-
-          const star = item.stars[starIndex];
-
-          const normMag = Math.max(-1.5, Math.min(6.5, star.mag));
-          const volume = Math.pow(1.0 - (normMag + 1.5) / 8.0, 1.5) * 0.7 + 0.1;
-
-          const bv = star.bv !== undefined ? star.bv : 0.4;
-          const clampedBv = Math.max(-0.3, Math.min(1.6, bv));
-          const colorRatio = 1.0 - (clampedBv + 0.3) / 1.9;
-          const scaleIndex = Math.floor(colorRatio * (fNaturalMinorScale.length - 1));
-          const freq = fNaturalMinorScale[scaleIndex];
-
-          scheduleStarSound(freq, volume, nextNoteTime);
-
-          if (star.origIndex !== undefined) {
-            const delayMs = Math.max(0, (nextNoteTime - audioCtx.currentTime) * 1000);
-            const tid = setTimeout(() => {
-              if (isPlayingMusic) triggerStarFlash(star.origIndex);
-              activeTimeouts = activeTimeouts.filter(id => id !== tid);
-            }, delayMs);
-            activeTimeouts.push(tid);
-          }
-
-          starIndex++;
-          nextNoteTime += 0.30 + Math.random() * 0.15;
         }
-      }, 100);
+        if (needsUpdate) {
+          starMesh.geometry.attributes.aFlash.needsUpdate = true;
+        }
+      }
+
+      // 60秒ごとの画面更新（演奏中はスキップしてフリーズ防止）
+      if (nowTime - lastCalcTime > 60000) {
+        if (realStarsData.length > 0 && !isPlayingMusic) {
+          buildRealStarField();
+        }
+        lastCalcTime = nowTime;
+      }
+
+      if (isManualMode) {
+        if (!isPlayingMusic) orbitControls.update();
+      } else {
+        updateCameraOrientation();
+      }
+
+      renderer.render(scene, camera);
     }
 
     function loadLibrary() {
@@ -1126,6 +1104,29 @@
       localStorage.setItem('star_library_data', JSON.stringify(savedLibrary));
     }
 
+    function updateVisibleStars() {
+      if (!starMesh || !realStarsData.length) return [];
+
+      const projVec = new THREE.Vector3();
+      const posAttr = starMesh.geometry.attributes.position;
+      const stars = [];
+
+      for (let i = 0; i < realStarsData.length; i++) {
+        projVec.fromBufferAttribute(posAttr, i);
+        projVec.project(camera);
+
+        if (projVec.x >= -1.0 && projVec.x <= 1.0 && projVec.y >= -1.0 && projVec.y <= 1.0 && projVec.z < 1.0) {
+          stars.push({
+            index: i,
+            screenY: projVec.y,
+            starData: realStarsData[i]
+          });
+        }
+      }
+
+      return stars;
+    }
+
     function saveCurrentStarfield() {
       if (savedLibrary.length >= 5) {
         alert("ライブラリには最大5枚までしか保存できません。\n不要な星空を削除してから保存してください。");
@@ -1141,6 +1142,7 @@
       const starsData = visibleStars.map(s => ({
         mag: s.starData.mag,
         bv: s.starData.bv,
+        screenY: s.screenY,
         origIndex: s.index
       }));
 
