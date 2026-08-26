@@ -996,7 +996,6 @@
       isPlayingMusic = true;
       currentPlayingId = id;
 
-      // 保存された星リスト（画面上部Y軸降順・X軸昇順に整列済み）を割り当て
       currentPlaybackList = [...item.stars];
 
       playbackStarIndex = 0;
@@ -1009,43 +1008,40 @@
       }
     }
 
-    // シームレス高精度オーディオススケジューラー（フリーズ防止強化）
+    // 音声スケジューラー（安全ガード追加版）
     function updateAudioScheduler() {
-      if (!isPlayingMusic || !audioCtx || currentPlaybackList.length === 0) return;
+      if (!isPlayingMusic || !audioCtx || !currentPlaybackList || currentPlaybackList.length === 0) return;
 
-      // 音が遅れてタイマーが過去に取り残された場合の保護・自動リセット
       if (nextNoteTime < audioCtx.currentTime) {
         nextNoteTime = audioCtx.currentTime + 0.05;
       }
 
       while (nextNoteTime < audioCtx.currentTime + 0.1) {
-        const star = currentPlaybackList[playbackStarIndex];
+        const safeIndex = playbackStarIndex % currentPlaybackList.length;
+        const star = currentPlaybackList[safeIndex];
 
-        const normMag = Math.max(-1.5, Math.min(6.5, star.mag));
-        const volume = Math.pow(1.0 - (normMag + 1.5) / 8.0, 1.5) * 0.7 + 0.1;
+        if (star) {
+          const normMag = Math.max(-1.5, Math.min(6.5, star.mag));
+          const volume = Math.pow(1.0 - (normMag + 1.5) / 8.0, 1.5) * 0.7 + 0.1;
 
-        const bv = star.bv !== undefined ? star.bv : 0.4;
-        const clampedBv = Math.max(-0.3, Math.min(1.6, bv));
-        const colorRatio = 1.0 - (clampedBv + 0.3) / 1.9;
-        const scaleIndex = Math.floor(colorRatio * (fNaturalMinorScale.length - 1));
-        const freq = fNaturalMinorScale[scaleIndex];
+          const bv = star.bv !== undefined ? star.bv : 0.4;
+          const clampedBv = Math.max(-0.3, Math.min(1.6, bv));
+          const colorRatio = 1.0 - (clampedBv + 0.3) / 1.9;
+          const scaleIndex = Math.floor(colorRatio * (fNaturalMinorScale.length - 1));
+          const freq = fNaturalMinorScale[scaleIndex];
 
-        // 予約発音
-        scheduleStarSound(freq, volume, nextNoteTime);
+          scheduleStarSound(freq, volume, nextNoteTime);
 
-        // ビジュアル（発音に合わせたフラッシュ）
-        if (star.origIndex !== undefined) {
-          const delayMs = Math.max(0, (nextNoteTime - audioCtx.currentTime) * 1000);
-          const targetIndex = star.origIndex;
-          setTimeout(() => {
-            if (isPlayingMusic) triggerStarFlash(targetIndex);
-          }, delayMs);
+          if (star.origIndex !== undefined) {
+            const delayMs = Math.max(0, (nextNoteTime - audioCtx.currentTime) * 1000);
+            const targetIndex = star.origIndex;
+            setTimeout(() => {
+              if (isPlayingMusic) triggerStarFlash(targetIndex);
+            }, delayMs);
+          }
         }
 
-        // 次の音のタイマー加算
         nextNoteTime += 0.25 + Math.random() * 0.08;
-
-        // 全ての星を上から下へ鳴らし終わったら、先頭（一番上）に戻って周回再生
         playbackStarIndex = (playbackStarIndex + 1) % currentPlaybackList.length;
       }
     }
@@ -1053,7 +1049,6 @@
     function animate(nowTime) {
       requestAnimationFrame(animate);
 
-      // オーディオススケジューラー更新
       updateAudioScheduler();
 
       if (starMesh && starMesh.material && starMesh.material.uniforms && starMesh.material.uniforms.uFov) {
@@ -1075,7 +1070,6 @@
         }
       }
 
-      // 60秒ごとの画面更新
       if (nowTime - lastCalcTime > 60000) {
         if (realStarsData.length > 0 && !isPlayingMusic) {
           buildRealStarField();
@@ -1107,20 +1101,35 @@
       localStorage.setItem('star_library_data', JSON.stringify(savedLibrary));
     }
 
-    // 【重要】☆ボタンを押した瞬間に画面に映っている星を取得＆上から順（Y降順/X昇順）にソート
+    // 視界錐台 (Frustum) と行列強制更新を導入した高精度な画面内星検出関数
     function updateVisibleStars() {
       if (!starMesh || !realStarsData.length) return [];
 
-      const projVec = new THREE.Vector3();
+      // カメラの行列を即時更新して最新状態にする
+      camera.updateMatrixWorld();
+      camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
+
+      // カメラの視界 (Frustum) を生成
+      const frustum = new THREE.Frustum();
+      const projScreenMatrix = new THREE.Matrix4();
+      projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+      frustum.setFromMatrix(projScreenMatrix);
+
       const posAttr = starMesh.geometry.attributes.position;
+      const worldPos = new THREE.Vector3();
+      const projVec = new THREE.Vector3();
       const stars = [];
 
       for (let i = 0; i < realStarsData.length; i++) {
-        projVec.fromBufferAttribute(posAttr, i);
-        projVec.project(camera);
+        worldPos.fromBufferAttribute(posAttr, i);
 
-        // 画面の視界内 (-1.0 ～ 1.0) かつ カメラの前方 (z < 1.0) にあるかチェック
-        if (projVec.x >= -1.0 && projVec.x <= 1.0 && projVec.y >= -1.0 && projVec.y <= 1.0 && projVec.z < 1.0) {
+        // 1. 視界内（カメラの前方かつ画面に収まっている領域）にあるか厳密に判定
+        if (frustum.containsPoint(worldPos)) {
+          projVec.copy(worldPos).project(camera);
+
+          // 非数 (NaN) の排除
+          if (isNaN(projVec.x) || isNaN(projVec.y)) continue;
+
           stars.push({
             index: i,
             screenX: projVec.x,
@@ -1130,10 +1139,10 @@
         }
       }
 
-      // 上から順 (screenYが大きい順) ＆ 同じ高さなら左から右 (screenXが大きい順/小さい順) に整列
+      // 2. 画面上部から下部へ (Y軸降順)、同じ高さなら左から右へ (X軸昇順) 整列
       stars.sort((a, b) => {
         const diffY = b.screenY - a.screenY;
-        if (Math.abs(diffY) > 0.05) return diffY;
+        if (Math.abs(diffY) > 0.03) return diffY;
         return a.screenX - b.screenX;
       });
 
@@ -1146,7 +1155,6 @@
         return;
       }
 
-      // ☆押下時点の「画面内に映る星」を上からスキャン順に抽出
       const visibleStars = updateVisibleStars();
       if (visibleStars.length === 0) {
         alert("視界内に保存できる星が見つかりません。画面を星空に向けて保存してください。");
