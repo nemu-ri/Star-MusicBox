@@ -996,11 +996,14 @@
       isPlayingMusic = true;
       currentPlayingId = id;
 
-      // 配列の安全なソート
+      // 【修正】画面上部 (screenY: 1.0) から下部 (screenY: -1.0) へ正しくソート
+      // 高さ(Y)が非常に近い場合は左(X)から右(X)へスキャン
       currentPlaybackList = [...item.stars].sort((a, b) => {
-        if (a.screenY === b.screenY) return (a.origIndex || 0) - (b.origIndex || 0);
-        return (b.screenY || 0) - (a.screenY || 0);
+        const diffY = b.screenY - a.screenY;
+        if (Math.abs(diffY) > 0.05) return diffY;
+        return (a.screenX || 0) - (b.screenX || 0);
       });
+
       playbackStarIndex = 0;
       nextNoteTime = audioCtx.currentTime + 0.05;
 
@@ -1040,9 +1043,9 @@
         }
 
         // 次の音のタイマー加算
-        nextNoteTime += 0.30 + Math.random() * 0.10;
+        nextNoteTime += 0.25 + Math.random() * 0.08;
 
-        // 星全体を再生し終わったら最初に戻る（シームレス無限ループ）
+        // 全ての星を上から下へ鳴らし終わったら、先頭（一番上）に戻って周回再生
         playbackStarIndex = (playbackStarIndex + 1) % currentPlaybackList.length;
       }
     }
@@ -1118,6 +1121,7 @@
         if (projVec.x >= -1.0 && projVec.x <= 1.0 && projVec.y >= -1.0 && projVec.y <= 1.0 && projVec.z < 1.0) {
           stars.push({
             index: i,
+            screenX: projVec.x,
             screenY: projVec.y,
             starData: realStarsData[i]
           });
@@ -1142,6 +1146,7 @@
       const starsData = visibleStars.map(s => ({
         mag: s.starData.mag,
         bv: s.starData.bv,
+        screenX: s.screenX,
         screenY: s.screenY,
         origIndex: s.index
       }));
