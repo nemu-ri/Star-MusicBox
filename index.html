@@ -142,11 +142,11 @@
     .lib-btn.delete-btn:hover { background: rgba(239, 68, 68, 0.4); border-color: #ef4444; }
 
     .thumb-container {
-      position: relative; width: 100%; height: 130px; border-radius: 6px;
+      position: relative; width: 100%; height: 160px; border-radius: 6px;
       overflow: hidden; background: #000; border: 1px solid rgba(255,255,255,0.1);
       cursor: pointer;
     }
-    .thumb-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .thumb-img { width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
     .thumb-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
 
     #image-modal {
@@ -164,7 +164,6 @@
     <div id="sensor-info">モード: 画面タップで方位固定・連動</div>
   </div>
 
-  <!-- スキャンバーを追加 -->
   <div id="scan-bar"></div>
 
   <button id="save-btn" title="現在の星空を保存 (最大5枚)">
@@ -193,7 +192,6 @@
       </select>
     </div>
 
-    <!-- スキャン速度（秒数）調整に変更 -->
     <div class="setting-item">
       <span>スキャン周期 (<span id="bpm-val">12</span>秒)</span>
       <input type="range" id="bpm-slider" min="6" max="24" value="12" step="1" style="width: 100px;">
@@ -269,23 +267,21 @@
     let masterFilter = null;
     let isPlayingMusic = false;
     let currentTimbre = 'kalimba';
-    let scanDuration = 12; // 1周期の秒数
+    let scanDuration = 12;
     let playStartTime = 0;
     let currentPlayingId = null;
     let savedLibrary = [];
 
     let currentPlaybackList = [];
     let playedStarIndices = new Set();
-    let lastSoundTime = 0; // 直近の発音時間（発音制限用）
+    let lastSoundTime = 0;
 
-    // アンビエントに最適な F Pentatonic Scale (F, G, A, C, D)
     const fPentatonicScale = [
-      174.61, 196.00, 220.00, 261.63, 293.66, // F3, G3, A3, C4, D4
-      349.23, 392.00, 440.00, 523.25, 587.33, // F4, G4, A4, C5, D5
-      698.46, 783.99, 880.00, 1046.50, 1174.66 // F5, G5, A5, C6, D6
+      174.61, 196.00, 220.00, 261.63, 293.66,
+      349.23, 392.00, 440.00, 523.25, 587.33,
+      698.46, 783.99, 880.00, 1046.50, 1174.66
     ];
 
-    // ベース・ドローン用低音 (F1, C2, F2, C3)
     const bassScale = [43.65, 65.41, 87.31, 130.81];
 
     const cities = [
@@ -951,10 +947,9 @@
       if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         
-        // 全体の音を柔らかく包み込むマスターローパスフィルター（角の取れた温かい音に）
         masterFilter = audioCtx.createBiquadFilter();
         masterFilter.type = 'lowpass';
-        masterFilter.frequency.setValueAtTime(1800, audioCtx.currentTime); // 高音域カット
+        masterFilter.frequency.setValueAtTime(1800, audioCtx.currentTime);
         masterFilter.connect(audioCtx.destination);
       }
       if (audioCtx.state === 'suspended') {
@@ -962,7 +957,6 @@
       }
     }
 
-    // アンビエント設計に改定した音源発音ロジック
     function scheduleStarSound(freq, volume, startTime, pan = 0, isBass = false) {
       if (!audioCtx) return;
 
@@ -972,11 +966,10 @@
       osc.frequency.setValueAtTime(freq, startTime);
 
       if (isBass) {
-        // 明るい星用：ドローンベースライン（サイン波＋長いアタック/リリース）
         osc.type = 'sine';
         const duration = 6.0;
         gainNode.gain.setValueAtTime(0.0001, startTime);
-        gainNode.gain.linearRampToValueAtTime(0.25, startTime + 0.6); // じわっと立ち上がる
+        gainNode.gain.linearRampToValueAtTime(0.25, startTime + 0.6);
         gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
         osc.connect(gainNode);
@@ -992,13 +985,12 @@
         osc.start(startTime);
         osc.stop(startTime + duration);
       } else {
-        // 暗い〜通常の星用（三角波/サイン波で柔らかい余韻）
         osc.type = (currentTimbre === 'piano') ? 'triangle' : 'sine';
         const duration = (currentTimbre === 'synth') ? 3.5 : 2.2;
 
         gainNode.gain.setValueAtTime(0.0001, startTime);
-        gainNode.gain.linearRampToValueAtTime(volume * 0.2, startTime + 0.08); // ソフトアタック
-        gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + duration); // ロングリリース
+        gainNode.gain.linearRampToValueAtTime(volume * 0.2, startTime + 0.08);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
         osc.connect(gainNode);
 
@@ -1124,18 +1116,15 @@
       }
     }
 
-    // バーの移動に完全同期したスキャン再生ロジック
     function updateScanPlayback() {
       if (!isPlayingMusic || !audioCtx || !currentPlaybackList.length) return;
 
       const elapsedTime = audioCtx.currentTime - playStartTime;
-      const progress = (elapsedTime % scanDuration) / scanDuration; // 0.0 〜 1.0
+      const progress = (elapsedTime % scanDuration) / scanDuration;
 
-      // 視覚的バーの移動
       const windowHeight = window.innerHeight;
       scanBarEl.style.top = `${progress * windowHeight}px`;
 
-      // 新しい周が始まったら発音フラグをクリア
       if (progress < 0.02 && playedStarIndices.size > currentPlaybackList.length * 0.5) {
         playedStarIndices.clear();
       }
@@ -1143,16 +1132,13 @@
       const currentTime = audioCtx.currentTime;
 
       currentPlaybackList.forEach((star, idx) => {
-        // バーが星のY位置（normY）を通過したか判定
         if (!playedStarIndices.has(idx) && progress >= star.normY) {
           
-          // 【飽和対策1】直近の発音から0.1秒未満の場合は確率で間引く
           if (currentTime - lastSoundTime < 0.1 && Math.random() > 0.4) {
             playedStarIndices.add(idx);
             return;
           }
 
-          // 【飽和対策2】暗い星（mag > 4.5）は30%の確率でスキップ
           if (star.mag > 4.5 && Math.random() > 0.3) {
             playedStarIndices.add(idx);
             return;
@@ -1161,18 +1147,15 @@
           playedStarIndices.add(idx);
           lastSoundTime = currentTime;
 
-          const isBright = star.mag < 2.0; // 明るい星（1〜2等星）
+          const isBright = star.mag < 2.0;
 
           if (isBright) {
-            // 明るい星：重厚な低音ベースライン
             const bassIndex = Math.floor(star.normX * (bassScale.length - 1));
             const freq = bassScale[bassIndex];
             const pan = (star.normX - 0.5) * 1.6;
             scheduleStarSound(freq, 0.4, currentTime, pan, true);
           } else {
-            // 暗い〜普通の星：小刻みな高音（ペンタトニックスケール）
             const normMag = Math.max(-1.5, Math.min(8.5, star.mag));
-            // 【音量制御】暗い星ほど音量を極限まで小さく
             const volume = Math.max(0.03, 0.25 - ((normMag + 1.5) / 10.0) * 0.22);
 
             const scaleIndex = Math.floor(star.normX * (fPentatonicScale.length - 1));
@@ -1182,7 +1165,6 @@
             scheduleStarSound(freq, volume, currentTime, pan, false);
           }
 
-          // ビジュアルフィードバック（星を光らせる）
           if (star.origIndex !== undefined) {
             triggerStarFlash(star.origIndex);
           }
@@ -1207,7 +1189,7 @@
         let needsUpdate = false;
         for (let i = 0; i < flashArr.length; i++) {
           if (flashArr[i] > 0) {
-            flashArr[i] -= 0.03; // フラッシュの余韻を少し長く
+            flashArr[i] -= 0.03;
             if (flashArr[i] < 0) flashArr[i] = 0;
             needsUpdate = true;
           }
@@ -1248,6 +1230,7 @@
       localStorage.setItem('star_library_data', JSON.stringify(savedLibrary));
     }
 
+    // 【核心修正箇所】画面に見えている通りのピクセル座標を直接取得する関数
     function updateVisibleStars() {
       if (!starMesh || !realStarsData.length) return [];
 
@@ -1258,32 +1241,50 @@
       const projVec = new THREE.Vector3();
       const stars = [];
 
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+
       for (let i = 0; i < realStarsData.length; i++) {
         worldPos.fromBufferAttribute(posAttr, i);
-
         projVec.copy(worldPos).project(camera);
 
         if (isNaN(projVec.x) || isNaN(projVec.y) || projVec.z >= 1.0) continue;
 
+        // 画面内判定
         if (projVec.x >= -1.0 && projVec.x <= 1.0 && projVec.y >= -1.0 && projVec.y <= 1.0) {
+          // 正規化座標 (0.0〜1.0) に変換
+          // normX: 左端=0.0 〜 右端=1.0
+          // normY: 上端=0.0 〜 下端=1.0 (Webの画面座標・スキャンバー降下方向に厳密一致)
+          const normX = (projVec.x + 1) / 2;
+          const normY = (1 - projVec.y) / 2;
+
           stars.push({
             index: i,
-            screenX: projVec.x,
-            screenY: projVec.y,
+            normX: normX,
+            normY: normY,
             starData: realStarsData[i]
           });
         }
       }
 
-      stars.sort((a, b) => {
-        const diffY = b.screenY - a.screenY;
-        if (Math.abs(diffY) > 0.001) {
-          return diffY;
-        }
-        return a.screenX - b.screenX;
-      });
+      // 上から順（normYの昇順）にソート
+      stars.sort((a, b) => a.normY - b.normY);
 
       return stars;
+    }
+
+    // 【核心修正箇所】キャプチャ画像を画面の正しい向き（アスペクト比）で切り出して保存する処理
+    function captureCorrectedSnapshot() {
+      const srcCanvas = renderer.domElement;
+      const offCanvas = document.createElement('canvas');
+      
+      offCanvas.width = srcCanvas.width;
+      offCanvas.height = srcCanvas.height;
+
+      const ctx = offCanvas.getContext('2d');
+      ctx.drawImage(srcCanvas, 0, 0);
+
+      return offCanvas.toDataURL('image/jpeg', 0.85);
     }
 
     function saveCurrentStarfield() {
@@ -1298,13 +1299,13 @@
         return;
       }
 
-      const thumbnailData = renderer.domElement.toDataURL('image/jpeg', 0.6);
+      const thumbnailData = captureCorrectedSnapshot();
 
       const starsData = visibleStars.map(s => ({
         mag: s.starData.mag,
         bv: s.starData.bv,
-        normX: (s.screenX + 1) / 2,
-        normY: (1 - s.screenY) / 2,
+        normX: s.normX,
+        normY: s.normY,
         origIndex: s.index
       }));
 
