@@ -25,6 +25,19 @@
       line-height: 1.5; pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,0.8); 
     }
 
+    /* 再生時に全面に表示するスクリーンショット背景 */
+    #playback-bg {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      object-fit: cover;
+      z-index: 2;
+      display: none;
+      pointer-events: none;
+    }
+
     /* 演奏中に上から下へ動くスキャンバー */
     #scan-bar {
       position: absolute;
@@ -142,11 +155,11 @@
     .lib-btn.delete-btn:hover { background: rgba(239, 68, 68, 0.4); border-color: #ef4444; }
 
     .thumb-container {
-      position: relative; width: 100%; height: 160px; border-radius: 6px;
+      position: relative; width: 100%; height: 130px; border-radius: 6px;
       overflow: hidden; background: #000; border: 1px solid rgba(255,255,255,0.1);
       cursor: pointer;
     }
-    .thumb-img { width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
+    .thumb-img { width: 100%; height: 100%; object-fit: cover; display: block; }
     .thumb-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
 
     #image-modal {
@@ -164,6 +177,10 @@
     <div id="sensor-info">モード: 画面タップで方位固定・連動</div>
   </div>
 
+  <!-- ライブラリ再生時の画面背景画像 -->
+  <img id="playback-bg" src="" alt="再生背景">
+
+  <!-- スキャンバー -->
   <div id="scan-bar"></div>
 
   <button id="save-btn" title="現在の星空を保存 (最大5枚)">
@@ -245,6 +262,7 @@
     const locationEl = document.getElementById('location-info');
     const sensorEl = document.getElementById('sensor-info');
     const scanBarEl = document.getElementById('scan-bar');
+    const playbackBgEl = document.getElementById('playback-bg');
 
     let isManualMode = false;
     let showConstellations = false;
@@ -267,21 +285,23 @@
     let masterFilter = null;
     let isPlayingMusic = false;
     let currentTimbre = 'kalimba';
-    let scanDuration = 12;
+    let scanDuration = 12; // 1周期の秒数
     let playStartTime = 0;
     let currentPlayingId = null;
     let savedLibrary = [];
 
     let currentPlaybackList = [];
     let playedStarIndices = new Set();
-    let lastSoundTime = 0;
+    let lastSoundTime = 0; // 直近の発音時間（発音制限用）
 
+    // アンビエントに最適な F Pentatonic Scale (F, G, A, C, D)
     const fPentatonicScale = [
-      174.61, 196.00, 220.00, 261.63, 293.66,
-      349.23, 392.00, 440.00, 523.25, 587.33,
-      698.46, 783.99, 880.00, 1046.50, 1174.66
+      174.61, 196.00, 220.00, 261.63, 293.66, // F3, G3, A3, C4, D4
+      349.23, 392.00, 440.00, 523.25, 587.33, // F4, G4, A4, C5, D5
+      698.46, 783.99, 880.00, 1046.50, 1174.66 // F5, G5, A5, C6, D6
     ];
 
+    // ベース・ドローン用低音 (F1, C2, F2, C3)
     const bassScale = [43.65, 65.41, 87.31, 130.81];
 
     const cities = [
@@ -1072,6 +1092,11 @@
       currentPlaybackList = [];
       playedStarIndices.clear();
 
+      if (playbackBgEl) {
+        playbackBgEl.style.display = 'none';
+        playbackBgEl.src = '';
+      }
+
       scanBarEl.style.display = 'none';
       resetFlashBoosts();
       renderLibrary();
@@ -1105,6 +1130,11 @@
       playStartTime = audioCtx.currentTime;
 
       currentPlaybackList = [...item.stars];
+
+      if (item.image) {
+        playbackBgEl.src = item.image;
+        playbackBgEl.style.display = 'block';
+      }
 
       scanBarEl.style.display = 'block';
       scanBarEl.style.top = '0px';
@@ -1230,7 +1260,6 @@
       localStorage.setItem('star_library_data', JSON.stringify(savedLibrary));
     }
 
-    // 【核心修正箇所】画面に見えている通りのピクセル座標を直接取得する関数
     function updateVisibleStars() {
       if (!starMesh || !realStarsData.length) return [];
 
@@ -1241,50 +1270,32 @@
       const projVec = new THREE.Vector3();
       const stars = [];
 
-      const width = window.innerWidth;
-      const height = window.innerHeight;
-
       for (let i = 0; i < realStarsData.length; i++) {
         worldPos.fromBufferAttribute(posAttr, i);
+
         projVec.copy(worldPos).project(camera);
 
         if (isNaN(projVec.x) || isNaN(projVec.y) || projVec.z >= 1.0) continue;
 
-        // 画面内判定
         if (projVec.x >= -1.0 && projVec.x <= 1.0 && projVec.y >= -1.0 && projVec.y <= 1.0) {
-          // 正規化座標 (0.0〜1.0) に変換
-          // normX: 左端=0.0 〜 右端=1.0
-          // normY: 上端=0.0 〜 下端=1.0 (Webの画面座標・スキャンバー降下方向に厳密一致)
-          const normX = (projVec.x + 1) / 2;
-          const normY = (1 - projVec.y) / 2;
-
           stars.push({
             index: i,
-            normX: normX,
-            normY: normY,
+            screenX: projVec.x,
+            screenY: projVec.y,
             starData: realStarsData[i]
           });
         }
       }
 
-      // 上から順（normYの昇順）にソート
-      stars.sort((a, b) => a.normY - b.normY);
+      stars.sort((a, b) => {
+        const diffY = b.screenY - a.screenY;
+        if (Math.abs(diffY) > 0.001) {
+          return diffY;
+        }
+        return a.screenX - b.screenX;
+      });
 
       return stars;
-    }
-
-    // 【核心修正箇所】キャプチャ画像を画面の正しい向き（アスペクト比）で切り出して保存する処理
-    function captureCorrectedSnapshot() {
-      const srcCanvas = renderer.domElement;
-      const offCanvas = document.createElement('canvas');
-      
-      offCanvas.width = srcCanvas.width;
-      offCanvas.height = srcCanvas.height;
-
-      const ctx = offCanvas.getContext('2d');
-      ctx.drawImage(srcCanvas, 0, 0);
-
-      return offCanvas.toDataURL('image/jpeg', 0.85);
     }
 
     function saveCurrentStarfield() {
@@ -1299,13 +1310,13 @@
         return;
       }
 
-      const thumbnailData = captureCorrectedSnapshot();
+      const thumbnailData = renderer.domElement.toDataURL('image/jpeg', 0.6);
 
       const starsData = visibleStars.map(s => ({
         mag: s.starData.mag,
         bv: s.starData.bv,
-        normX: s.normX,
-        normY: s.normY,
+        normX: (s.screenX + 1) / 2,
+        normY: (1 - s.screenY) / 2,
         origIndex: s.index
       }));
 
