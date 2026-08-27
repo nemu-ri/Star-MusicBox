@@ -32,24 +32,38 @@
       left: 0;
       width: 100vw;
       height: 100vh;
-      object-fit: cover;
+      object-fit: contain; /* アスペクト比を崩さず全画面フィット */
+      background: #000;
       z-index: 2;
       display: none;
       pointer-events: none;
     }
 
-    /* 演奏中に上から下へ動くスキャンバー */
+    /* 演奏中に動くスキャンバー (縦/横両対応) */
     #scan-bar {
       position: absolute;
-      left: 0;
-      width: 100%;
-      height: 2px;
-      background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(147, 197, 253, 0.8) 50%, rgba(255,255,255,0) 100%);
-      box-shadow: 0 0 10px rgba(147, 197, 253, 0.8), 0 0 20px rgba(147, 197, 253, 0.5);
       z-index: 10;
       pointer-events: none;
       display: none;
+      box-shadow: 0 0 10px rgba(147, 197, 253, 0.8), 0 0 20px rgba(147, 197, 253, 0.5);
+    }
+
+    /* 縦移動（横バー） */
+    #scan-bar.horizontal-bar {
+      left: 0;
+      width: 100%;
+      height: 2px;
       top: 0;
+      background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(147, 197, 253, 0.8) 50%, rgba(255,255,255,0) 100%);
+    }
+
+    /* 横移動（縦バー） */
+    #scan-bar.vertical-bar {
+      top: 0;
+      height: 100%;
+      width: 2px;
+      left: 0;
+      background: linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(147, 197, 253, 0.8) 50%, rgba(255,255,255,0) 100%);
     }
 
     #save-btn {
@@ -90,7 +104,6 @@
     #sidebar.open { display: flex; opacity: 1; transform: translateX(0); }
 
     .sidebar-header { font-size: 18px; font-weight: bold; margin-bottom: 20px; display: flex; align-items: center; gap: 8px; }
-
     .setting-item { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; font-size: 14px; }
 
     .switch { position: relative; display: inline-block; width: 52px; height: 30px; }
@@ -177,10 +190,7 @@
     <div id="sensor-info">モード: 画面タップで方位固定・連動</div>
   </div>
 
-  <!-- ライブラリ再生時の画面背景画像 -->
   <img id="playback-bg" src="" alt="再生背景">
-
-  <!-- スキャンバー -->
   <div id="scan-bar"></div>
 
   <button id="save-btn" title="現在の星空を保存 (最大5枚)">
@@ -285,23 +295,21 @@
     let masterFilter = null;
     let isPlayingMusic = false;
     let currentTimbre = 'kalimba';
-    let scanDuration = 12; // 1周期の秒数
+    let scanDuration = 12;
     let playStartTime = 0;
     let currentPlayingId = null;
     let savedLibrary = [];
 
     let currentPlaybackList = [];
     let playedStarIndices = new Set();
-    let lastSoundTime = 0; // 直近の発音時間（発音制限用）
+    let lastSoundTime = 0;
 
-    // アンビエントに最適な F Pentatonic Scale (F, G, A, C, D)
     const fPentatonicScale = [
-      174.61, 196.00, 220.00, 261.63, 293.66, // F3, G3, A3, C4, D4
-      349.23, 392.00, 440.00, 523.25, 587.33, // F4, G4, A4, C5, D5
-      698.46, 783.99, 880.00, 1046.50, 1174.66 // F5, G5, A5, C6, D6
+      174.61, 196.00, 220.00, 261.63, 293.66,
+      349.23, 392.00, 440.00, 523.25, 587.33,
+      698.46, 783.99, 880.00, 1046.50, 1174.66
     ];
 
-    // ベース・ドローン用低音 (F1, C2, F2, C3)
     const bassScale = [43.65, 65.41, 87.31, 130.81];
 
     const cities = [
@@ -1098,6 +1106,7 @@
       }
 
       scanBarEl.style.display = 'none';
+      scanBarEl.className = '';
       resetFlashBoosts();
       renderLibrary();
 
@@ -1136,8 +1145,18 @@
         playbackBgEl.style.display = 'block';
       }
 
+      const isPortrait = window.innerHeight > window.innerWidth;
       scanBarEl.style.display = 'block';
-      scanBarEl.style.top = '0px';
+
+      if (isPortrait) {
+        scanBarEl.className = 'horizontal-bar';
+        scanBarEl.style.top = '0px';
+        scanBarEl.style.left = '0px';
+      } else {
+        scanBarEl.className = 'vertical-bar';
+        scanBarEl.style.left = '0px';
+        scanBarEl.style.top = '0px';
+      }
 
       renderLibrary();
 
@@ -1146,14 +1165,24 @@
       }
     }
 
+    /* 画面向き（縦長・横長）に応じたスキャンおよび発音判定の更新 */
     function updateScanPlayback() {
       if (!isPlayingMusic || !audioCtx || !currentPlaybackList.length) return;
 
       const elapsedTime = audioCtx.currentTime - playStartTime;
       const progress = (elapsedTime % scanDuration) / scanDuration;
 
-      const windowHeight = window.innerHeight;
-      scanBarEl.style.top = `${progress * windowHeight}px`;
+      const isPortrait = window.innerHeight > window.innerWidth;
+
+      if (isPortrait) {
+        // スマホなどの縦長画面：バーは上から下（縦移動）
+        const windowHeight = window.innerHeight;
+        scanBarEl.style.top = `${progress * windowHeight}px`;
+      } else {
+        // PCなどの横長画面：バーは左から右（横移動）
+        const windowWidth = window.innerWidth;
+        scanBarEl.style.left = `${progress * windowWidth}px`;
+      }
 
       if (progress < 0.02 && playedStarIndices.size > currentPlaybackList.length * 0.5) {
         playedStarIndices.clear();
@@ -1162,7 +1191,11 @@
       const currentTime = audioCtx.currentTime;
 
       currentPlaybackList.forEach((star, idx) => {
-        if (!playedStarIndices.has(idx) && progress >= star.normY) {
+        // 画面が縦長ならY軸（normY）、横長ならX軸（normX）を進行軸とする
+        const currentTargetAxis = isPortrait ? star.normY : star.normX;
+        const pitchAxis = isPortrait ? star.normX : star.normY;
+
+        if (!playedStarIndices.has(idx) && progress >= currentTargetAxis) {
           
           if (currentTime - lastSoundTime < 0.1 && Math.random() > 0.4) {
             playedStarIndices.add(idx);
@@ -1180,17 +1213,17 @@
           const isBright = star.mag < 2.0;
 
           if (isBright) {
-            const bassIndex = Math.floor(star.normX * (bassScale.length - 1));
+            const bassIndex = Math.floor(pitchAxis * (bassScale.length - 1));
             const freq = bassScale[bassIndex];
-            const pan = (star.normX - 0.5) * 1.6;
+            const pan = (pitchAxis - 0.5) * 1.6;
             scheduleStarSound(freq, 0.4, currentTime, pan, true);
           } else {
             const normMag = Math.max(-1.5, Math.min(8.5, star.mag));
             const volume = Math.max(0.03, 0.25 - ((normMag + 1.5) / 10.0) * 0.22);
 
-            const scaleIndex = Math.floor(star.normX * (fPentatonicScale.length - 1));
+            const scaleIndex = Math.floor(pitchAxis * (fPentatonicScale.length - 1));
             const freq = fPentatonicScale[scaleIndex];
-            const pan = (star.normX - 0.5) * 1.8;
+            const pan = (pitchAxis - 0.5) * 1.8;
 
             scheduleStarSound(freq, volume, currentTime, pan, false);
           }
