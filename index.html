@@ -6,8 +6,14 @@
   <title>リアルタイムAR星空オルゴール</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
   <style>
-    body {
+    * {
+      box-sizing: border-box;
+    }
+    html, body {
+      width: 100%;
+      height: 100%;
       margin: 0;
+      padding: 0;
       overflow: hidden;
       background: #000;
       color: #fff;
@@ -110,24 +116,22 @@
       box-shadow: 0 2px 6px rgba(0,0,0,0.5);
     }
 
-    /* サイドバーのスタイル調整 */
     #sidebar {
-      position: absolute; top: 0; right: 0; 
-      width: 320px; max-width: 85vw; height: 100%;
+      position: fixed; top: 0; right: 0; width: 320px; height: 100%; max-height: 100vh;
       background: rgba(10, 15, 30, 0.95); backdrop-filter: blur(12px);
       z-index: 25; padding: 60px 20px 20px; box-sizing: border-box;
       border-left: 1px solid rgba(255,255,255,0.15);
       display: none; opacity: 0; transform: translateX(100%);
       transition: opacity 0.25s ease, transform 0.25s ease;
-      flex-direction: column; overflow-y: auto;
+      flex-direction: column; overflow-y: auto; -webkit-overflow-scrolling: touch;
     }
     #sidebar.open { display: flex; opacity: 1; transform: translateX(0); }
 
     @media (max-width: 768px) {
       #sidebar {
-        width: 300px;
-        max-width: 85vw;
-        border-left: 1px solid rgba(255,255,255,0.15);
+        width: 100%;
+        max-width: 100vw;
+        border-left: none;
       }
     }
 
@@ -321,7 +325,6 @@
     let lastSoundTime = 0;
     let activeFlashes = [];
 
-    // Fナチュラルマイナースケール (F, G, Ab, Bb, C, Db, Eb)
     const fNaturalMinorBase = [
       174.61, // F3
       196.00, // G3
@@ -672,9 +675,11 @@
       const width = window.visualViewport ? window.visualViewport.width : window.innerWidth;
       const height = window.visualViewport ? window.visualViewport.height : window.innerHeight;
       
-      camera.aspect = width / height;
-      camera.updateProjectionMatrix();
-      renderer.setSize(width, height);
+      if (camera && renderer) {
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+        renderer.setSize(width, height);
+      }
 
       if (effectCanvas) {
         effectCanvas.width = width;
@@ -756,6 +761,12 @@
       window.addEventListener('resize', updateCanvasSize);
       if (window.visualViewport) {
         window.visualViewport.addEventListener('resize', updateCanvasSize);
+      }
+
+      if (window.ResizeObserver) {
+        new ResizeObserver(() => {
+          updateCanvasSize();
+        }).observe(document.body);
       }
 
       window.addEventListener('orientationchange', () => {
@@ -1047,6 +1058,7 @@
         );
       } else {
         locationEl.innerText = `観測地: ${cityName}`;
+        renderCityList();
       }
     }
 
@@ -1716,6 +1728,7 @@
     });
 
     function renderCityList() {
+      if (!cityListEl) return;
       cityListEl.innerHTML = '';
       cities.forEach(city => {
         const item = document.createElement('div');
@@ -1743,6 +1756,7 @@
 
     window.addEventListener('DOMContentLoaded', () => {
       initThree();
+      renderCityList();
       loadLibrary();
       renderLibrary();
       requestAnimationFrame(animate);
