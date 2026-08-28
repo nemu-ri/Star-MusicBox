@@ -317,6 +317,10 @@
     let lastSoundTime = 0;
     let activeFlashes = [];
 
+    // 現在のバーの進行度と方向
+    let currentScanProgress = 0;
+    let currentIsPortrait = true;
+
     const fNaturalMinorBase = [
       174.61, // F3
       196.00, // G3
@@ -1161,35 +1165,102 @@
       }
     }
 
-    /* メイン画面用のマルチウェーブ（波紋干渉）発生処理 */
+    /* メイン画面用の星の波紋発生処理（全ての通過星に発生） */
     function triggerMainScreenFlash(x, y) {
       mainScreenFlashes.push({
         x,
         y,
         radius: 2,
-        maxRadius: 28,      // 波紋の最大半径
-        ringCount: 3,       // 同心円の数
-        ringSpacing: 6,     // 同心円の間隔
+        maxRadius: 36,      // 少し広がりを強調
+        ringCount: 3,       
+        ringSpacing: 7,     
         opacity: 1.0,
         coreBrightness: 1.0
       });
     }
 
-    /* メイン画面の波紋更新描画（加算合成による波動の干渉を表現） */
+    /* メイン画面の波紋・バー進行方向波・通過した星の描画 */
     function updateAndDrawMainScreenFlashes() {
       if (!effectCtx) return;
       effectCtx.clearRect(0, 0, effectCanvas.width, effectCanvas.height);
 
-      if (mainScreenFlashes.length === 0) return;
-
       effectCtx.save();
-      // 波と波が重なった部分を明るく発光させる干渉（アルファ加算ブレンド）効果
       effectCtx.globalCompositeOperation = 'lighter';
 
+      // 1. バーの進行方向側への音波エフェクト（進行方向にのみ広がるグラデーション波）
+      if (isPlayingMusic) {
+        const w = effectCanvas.width;
+        const h = effectCanvas.height;
+
+        if (currentIsPortrait) {
+          // 縦長画面: バーは上から下へ移動（進行方向は「下」）
+          const barY = currentScanProgress * h;
+          const waveLength = 60; // 音波の広がり幅
+          const waveGrad = effectCtx.createLinearGradient(0, barY, 0, barY + waveLength);
+          waveGrad.addColorStop(0.0, 'rgba(147, 197, 253, 0.45)');
+          waveGrad.addColorStop(0.3, 'rgba(96, 165, 250, 0.25)');
+          waveGrad.addColorStop(1.0, 'rgba(0, 102, 255, 0.0)');
+
+          effectCtx.fillStyle = waveGrad;
+          effectCtx.fillRect(0, barY, w, waveLength);
+
+          // 進行方向側のサブパルス波
+          const pulseOffset = (Date.now() % 1200) / 1200 * waveLength;
+          effectCtx.beginPath();
+          effectCtx.moveTo(0, barY + pulseOffset);
+          effectCtx.lineTo(w, barY + pulseOffset);
+          effectCtx.strokeStyle = `rgba(191, 219, 254, ${0.4 * (1 - pulseOffset / waveLength)})`;
+          effectCtx.lineWidth = 1.5;
+          effectCtx.stroke();
+        } else {
+          // 横長画面: バーは左から右へ移動（進行方向は「右」）
+          const barX = currentScanProgress * w;
+          const waveLength = 60; 
+          const waveGrad = effectCtx.createLinearGradient(barX, 0, barX + waveLength, 0);
+          waveGrad.addColorStop(0.0, 'rgba(147, 197, 253, 0.45)');
+          waveGrad.addColorStop(0.3, 'rgba(96, 165, 250, 0.25)');
+          waveGrad.addColorStop(1.0, 'rgba(0, 102, 255, 0.0)');
+
+          effectCtx.fillStyle = waveGrad;
+          effectCtx.fillRect(barX, 0, waveLength, h);
+
+          // 進行方向側のサブパルス波
+          const pulseOffset = (Date.now() % 1200) / 1200 * waveLength;
+          effectCtx.beginPath();
+          effectCtx.moveTo(barX + pulseOffset, 0);
+          effectCtx.lineTo(barX + pulseOffset, h);
+          effectCtx.strokeStyle = `rgba(191, 219, 254, ${0.4 * (1 - pulseOffset / waveLength)})`;
+          effectCtx.lineWidth = 1.5;
+          effectCtx.stroke();
+        }
+
+        // 2. 通過済みの星を視覚的にわかるようにマーク（小さな輝きを残す）
+        currentPlaybackList.forEach((star) => {
+          if (star.hasBeenPlayed) {
+            const sx = star.normX * w;
+            const sy = star.normY * h;
+
+            // 通過した証としての残光リング
+            effectCtx.beginPath();
+            effectCtx.arc(sx, sy, 3.5, 0, Math.PI * 2);
+            effectCtx.fillStyle = 'rgba(186, 230, 253, 0.85)';
+            effectCtx.shadowColor = '#38bdf8';
+            effectCtx.shadowBlur = 8;
+            effectCtx.fill();
+
+            effectCtx.beginPath();
+            effectCtx.arc(sx, sy, 6, 0, Math.PI * 2);
+            effectCtx.strokeStyle = 'rgba(56, 189, 248, 0.4)';
+            effectCtx.lineWidth = 1;
+            effectCtx.stroke();
+          }
+        });
+      }
+
+      // 3. 通過したすべての星の波紋演出（広がっていく波紋）
       for (let i = mainScreenFlashes.length - 1; i >= 0; i--) {
         const flash = mainScreenFlashes[i];
 
-        // 中心コアの点滅
         if (flash.coreBrightness > 0) {
           effectCtx.beginPath();
           effectCtx.arc(flash.x, flash.y, 4, 0, Math.PI * 2);
@@ -1199,7 +1270,6 @@
           effectCtx.fill();
         }
 
-        // 複数の同心波紋を描画して、波の広がりの干渉を演出
         for (let r = 0; r < flash.ringCount; r++) {
           const currentRadius = flash.radius - (r * flash.ringSpacing);
           if (currentRadius > 0) {
@@ -1216,8 +1286,8 @@
           }
         }
 
-        flash.radius += 0.85; 
-        flash.opacity -= 0.022;
+        flash.radius += 0.9; 
+        flash.opacity -= 0.02;
         flash.coreBrightness -= 0.05;
 
         if (flash.opacity <= 0 || flash.radius >= flash.maxRadius) {
@@ -1366,7 +1436,8 @@
       mainScreenFlashes = [];
       playStartTime = audioCtx.currentTime;
 
-      currentPlaybackList = [...item.stars];
+      // 通過フラグをクリアして初期化
+      currentPlaybackList = item.stars.map(s => ({ ...s, hasBeenPlayed: false }));
 
       if (item.image) {
         playbackBgEl.src = item.image;
@@ -1374,6 +1445,7 @@
       }
 
       const isPortrait = window.innerHeight > window.innerWidth;
+      currentIsPortrait = isPortrait;
       scanBarEl.style.display = 'block';
 
       if (isPortrait) {
@@ -1398,8 +1470,10 @@
 
       const elapsedTime = audioCtx.currentTime - playStartTime;
       const progress = (elapsedTime % scanDuration) / scanDuration;
+      currentScanProgress = progress;
 
       const isPortrait = window.innerHeight > window.innerWidth;
+      currentIsPortrait = isPortrait;
       const windowWidth = window.innerWidth;
       const windowHeight = window.innerHeight;
 
@@ -1409,8 +1483,10 @@
         scanBarEl.style.left = `${progress * windowWidth}px`;
       }
 
+      // ループ時に通過フラグをクリア
       if (progress < 0.02 && playedStarIndices.size > currentPlaybackList.length * 0.5) {
         playedStarIndices.clear();
+        currentPlaybackList.forEach(star => star.hasBeenPlayed = false);
       }
 
       const currentTime = audioCtx.currentTime;
@@ -1423,15 +1499,18 @@
           
           if (currentTime - lastSoundTime < 0.12 && Math.random() > 0.4) {
             playedStarIndices.add(idx);
+            star.hasBeenPlayed = true; // 視覚的フラグ更新
             return;
           }
 
           if (star.mag > 4.5 && Math.random() > 0.3) {
             playedStarIndices.add(idx);
+            star.hasBeenPlayed = true; // 視覚的フラグ更新
             return;
           }
 
           playedStarIndices.add(idx);
+          star.hasBeenPlayed = true; // 通過・演奏完了フラグを付与
           lastSoundTime = currentTime;
 
           const isBright = star.mag < 1.5;
@@ -1455,6 +1534,7 @@
             triggerStarFlash(star.origIndex);
           }
 
+          // バーが通過したすべての星で波紋演出を生成
           const flashX = star.normX * windowWidth;
           const flashY = star.normY * windowHeight;
           triggerMainScreenFlash(flashX, flashY);
