@@ -1161,28 +1161,21 @@
       }
     }
 
-    /* メイン画面用のマルチウェーブ（進行方向のみの波紋干渉）発生処理 */
-    function triggerMainScreenFlash(x, y, isPortrait) {
-      // 進行方向の基準角度（ラジアン）:
-      // 縦向き（タテ）＝ バーが下に進む（下方向: Math.PI / 2）
-      // 横向き（ヨコ）＝ バーが右に進む（右方向: 0）
-      const baseAngle = isPortrait ? Math.PI / 2 : 0;
-      
+    /* メイン画面用のマルチウェーブ（波紋干渉）発生処理 */
+    function triggerMainScreenFlash(x, y) {
       mainScreenFlashes.push({
         x,
         y,
         radius: 2,
-        maxRadius: 45,       // 波紋の最大拡大半径
-        ringCount: 4,        // 同心円の数（マルチウェーブ）
-        ringSpacing: 7,      // 同心円の間隔
-        angle: baseAngle,
-        spreadAngle: Math.PI * 0.65, // 広がり角度（前面約120度の中に波を展開）
+        maxRadius: 28,      // 波紋の最大半径
+        ringCount: 3,       // 同心円の数
+        ringSpacing: 6,     // 同心円の間隔
         opacity: 1.0,
         coreBrightness: 1.0
       });
     }
 
-    /* メイン画面の波紋更新描画（加算合成によるバー進行方向への波動表現） */
+    /* メイン画面の波紋更新描画（加算合成による波動の干渉を表現） */
     function updateAndDrawMainScreenFlashes() {
       if (!effectCtx) return;
       effectCtx.clearRect(0, 0, effectCanvas.width, effectCanvas.height);
@@ -1190,35 +1183,32 @@
       if (mainScreenFlashes.length === 0) return;
 
       effectCtx.save();
-      // 波と波が重なった部分がさらに強く発光する「加算ブレンド」
+      // 波と波が重なった部分を明るく発光させる干渉（アルファ加算ブレンド）効果
       effectCtx.globalCompositeOperation = 'lighter';
 
       for (let i = mainScreenFlashes.length - 1; i >= 0; i--) {
         const flash = mainScreenFlashes[i];
 
-        // 発光中心のコア
+        // 中心コアの点滅
         if (flash.coreBrightness > 0) {
           effectCtx.beginPath();
-          effectCtx.arc(flash.x, flash.y, 3.5, 0, Math.PI * 2);
+          effectCtx.arc(flash.x, flash.y, 4, 0, Math.PI * 2);
           effectCtx.fillStyle = `rgba(255, 255, 255, ${flash.coreBrightness})`;
           effectCtx.shadowColor = '#93c5fd';
           effectCtx.shadowBlur = 12;
           effectCtx.fill();
         }
 
-        // バーの進行方向に向かって複数重なる波紋の弧（マルチウェーブ）
-        const startArc = flash.angle - (flash.spreadAngle / 2);
-        const endArc = flash.angle + (flash.spreadAngle / 2);
-
+        // 複数の同心波紋を描画して、波の広がりの干渉を演出
         for (let r = 0; r < flash.ringCount; r++) {
           const currentRadius = flash.radius - (r * flash.ringSpacing);
           if (currentRadius > 0) {
-            const ringAlpha = flash.opacity * Math.pow(1 - (currentRadius / flash.maxRadius), 1.1) * (1 - r * 0.22);
+            const ringAlpha = flash.opacity * Math.pow(1 - (currentRadius / flash.maxRadius), 1.2) * (1 - r * 0.25);
             if (ringAlpha > 0) {
               effectCtx.beginPath();
-              effectCtx.arc(flash.x, flash.y, currentRadius, startArc, endArc);
+              effectCtx.arc(flash.x, flash.y, currentRadius, 0, Math.PI * 2);
               effectCtx.strokeStyle = `rgba(147, 197, 253, ${ringAlpha})`;
-              effectCtx.lineWidth = Math.max(0.6, 2.0 - r * 0.35);
+              effectCtx.lineWidth = Math.max(0.5, 1.8 - r * 0.4);
               effectCtx.shadowColor = '#60a5fa';
               effectCtx.shadowBlur = 8;
               effectCtx.stroke();
@@ -1226,8 +1216,8 @@
           }
         }
 
-        flash.radius += 1.1; 
-        flash.opacity -= 0.02;
+        flash.radius += 0.85; 
+        flash.opacity -= 0.022;
         flash.coreBrightness -= 0.05;
 
         if (flash.opacity <= 0 || flash.radius >= flash.maxRadius) {
@@ -1238,19 +1228,16 @@
       effectCtx.restore();
     }
 
-    /* サムネイル表示用の進行方向波紋発生処理 */
-    function triggerThumbnailFlash(itemId, normX, normY, isPortrait) {
-      const baseAngle = isPortrait ? Math.PI / 2 : 0;
+    /* サムネイル表示用の小さな波紋発生処理 */
+    function triggerThumbnailFlash(itemId, normX, normY) {
       activeFlashes.push({
         itemId,
         normX,
         normY,
         radius: 1,
-        maxRadius: 22,
-        ringCount: 3,
+        maxRadius: 15,
+        ringCount: 2,
         ringSpacing: 4,
-        angle: baseAngle,
-        spreadAngle: Math.PI * 0.65,
         opacity: 1.0,
         coreBrightness: 1.0
       });
@@ -1289,27 +1276,24 @@
 
         if (flash.coreBrightness > 0) {
           ctx.beginPath();
-          ctx.arc(x, y, 2, 0, Math.PI * 2);
+          ctx.arc(x, y, 2.5, 0, Math.PI * 2);
           ctx.fillStyle = `rgba(255, 255, 255, ${flash.coreBrightness})`;
           ctx.shadowColor = '#93c5fd';
-          ctx.shadowBlur = 6;
+          ctx.shadowBlur = 8;
           ctx.fill();
         }
-
-        const startArc = flash.angle - (flash.spreadAngle / 2);
-        const endArc = flash.angle + (flash.spreadAngle / 2);
 
         for (let r = 0; r < flash.ringCount; r++) {
           const currentRadius = flash.radius - (r * flash.ringSpacing);
           if (currentRadius > 0) {
-            const ringAlpha = flash.opacity * (1 - (currentRadius / flash.maxRadius)) * (1 - r * 0.25);
+            const ringAlpha = flash.opacity * (1 - (currentRadius / flash.maxRadius)) * (1 - r * 0.3);
             if (ringAlpha > 0) {
               ctx.beginPath();
-              ctx.arc(x, y, currentRadius, startArc, endArc);
+              ctx.arc(x, y, currentRadius, 0, Math.PI * 2);
               ctx.strokeStyle = `rgba(147, 197, 253, ${ringAlpha})`;
               ctx.lineWidth = 1.0;
               ctx.shadowColor = '#60a5fa';
-              ctx.shadowBlur = 4;
+              ctx.shadowBlur = 6;
               ctx.stroke();
             }
           }
@@ -1317,8 +1301,8 @@
 
         ctx.restore();
 
-        flash.radius += 0.65;
-        flash.opacity -= 0.028;
+        flash.radius += 0.55;
+        flash.opacity -= 0.03;
         flash.coreBrightness -= 0.06;
 
         if (flash.opacity <= 0 || flash.radius >= flash.maxRadius) {
@@ -1473,12 +1457,10 @@
 
           const flashX = star.normX * windowWidth;
           const flashY = star.normY * windowHeight;
-          
-          // 進行方向側の前面にのみ幾重もの波を出形
-          triggerMainScreenFlash(flashX, flashY, isPortrait);
+          triggerMainScreenFlash(flashX, flashY);
 
           if (currentPlayingId) {
-            triggerThumbnailFlash(currentPlayingId, star.normX, star.normY, isPortrait);
+            triggerThumbnailFlash(currentPlayingId, star.normX, star.normY);
           }
         }
       });
