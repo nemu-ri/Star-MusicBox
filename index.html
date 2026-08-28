@@ -63,7 +63,10 @@
     }
 
     #scan-bar.horizontal-bar {
+      left: 0;
+      width: 100%;
       height: 1px;
+      top: 0;
       background: linear-gradient(90deg, 
         rgba(255,255,255,0) 0%, 
         rgba(180, 220, 255, 0.4) 15%, 
@@ -74,7 +77,10 @@
     }
 
     #scan-bar.vertical-bar {
+      top: 0;
+      height: 100%;
       width: 1px;
+      left: 0;
       background: linear-gradient(180deg, 
         rgba(255,255,255,0) 0%, 
         rgba(180, 220, 255, 0.4) 15%, 
@@ -345,37 +351,6 @@
       { name: "シドニー", lat: -33.8688, lon: 151.2093 },
       { name: "ホノルル", lat: 21.3069, lon: -157.8583 }
     ];
-
-    // 再生画像の実際の描画領域（余白を除いた範囲）を取得するヘルパー関数
-    function getPlaybackImageRect() {
-      const windowWidth = window.innerWidth;
-      const windowHeight = window.innerHeight;
-
-      if (!playbackBgEl || playbackBgEl.style.display === 'none' || !playbackBgEl.naturalWidth) {
-        return { left: 0, top: 0, width: windowWidth, height: windowHeight };
-      }
-
-      const imgWidth = playbackBgEl.naturalWidth;
-      const imgHeight = playbackBgEl.naturalHeight;
-      const imgAspect = imgWidth / imgHeight;
-      const winAspect = windowWidth / windowHeight;
-
-      let drawW, drawH, left, top;
-
-      if (winAspect > imgAspect) {
-        drawH = windowHeight;
-        drawW = drawH * imgAspect;
-        left = (windowWidth - drawW) / 2;
-        top = 0;
-      } else {
-        drawW = windowWidth;
-        drawH = drawW / imgAspect;
-        left = 0;
-        top = (windowHeight - drawH) / 2;
-      }
-
-      return { left, top, width: drawW, height: drawH };
-    }
 
     function getSpectralClass(bv) {
       if (bv < -0.2) return 'O';
@@ -1198,17 +1173,7 @@
 
       if (mainScreenFlashes.length === 0) return;
 
-      const rect = getPlaybackImageRect();
-
       effectCtx.save();
-      
-      // 画像表示領域内（黒余白を除いた部分）のみにアニメーションを描画制限
-      if (isPlayingMusic && playbackBgEl && playbackBgEl.style.display !== 'none') {
-        effectCtx.beginPath();
-        effectCtx.rect(rect.left, rect.top, rect.width, rect.height);
-        effectCtx.clip();
-      }
-
       effectCtx.globalCompositeOperation = 'lighter';
 
       for (let i = mainScreenFlashes.length - 1; i >= 0; i--) {
@@ -1394,6 +1359,7 @@
       playedStarIndices.clear();
       activeFlashes = [];
       mainScreenFlashes = [];
+      playStartTime = audioCtx.currentTime;
 
       currentPlaybackList = [...item.stars];
 
@@ -1407,11 +1373,13 @@
 
       if (isPortrait) {
         scanBarEl.className = 'horizontal-bar';
+        scanBarEl.style.top = '0px';
+        scanBarEl.style.left = '0px';
       } else {
         scanBarEl.className = 'vertical-bar';
+        scanBarEl.style.left = '0px';
+        scanBarEl.style.top = '0px';
       }
-
-      playStartTime = audioCtx.currentTime;
 
       renderLibrary();
 
@@ -1427,19 +1395,13 @@
       const progress = (elapsedTime % scanDuration) / scanDuration;
 
       const isPortrait = window.innerHeight > window.innerWidth;
-      const rect = getPlaybackImageRect();
+      const windowWidth = window.innerWidth;
+      const windowHeight = window.innerHeight;
 
-      // 黒余白を除いた実際の「画像領域内」だけをバーが移動するように制限
       if (isPortrait) {
-        scanBarEl.style.top = `${rect.top + progress * rect.height}px`;
-        scanBarEl.style.left = `${rect.left}px`;
-        scanBarEl.style.width = `${rect.width}px`;
-        scanBarEl.style.height = `1px`;
+        scanBarEl.style.top = `${progress * windowHeight}px`;
       } else {
-        scanBarEl.style.left = `${rect.left + progress * rect.width}px`;
-        scanBarEl.style.top = `${rect.top}px`;
-        scanBarEl.style.height = `${rect.height}px`;
-        scanBarEl.style.width = `1px`;
+        scanBarEl.style.left = `${progress * windowWidth}px`;
       }
 
       if (progress < 0.02 && playedStarIndices.size > currentPlaybackList.length * 0.5) {
@@ -1475,9 +1437,8 @@
             triggerStarFlash(star.origIndex);
           }
 
-          // 波紋の位置を黒余白を考慮した画像領域内の絶対座標にマッピング
-          const flashX = rect.left + star.normX * rect.width;
-          const flashY = rect.top + star.normY * rect.height;
+          const flashX = star.normX * windowWidth;
+          const flashY = star.normY * windowHeight;
           triggerMainScreenFlash(flashX, flashY, noteDuration, star.mag);
 
           if (currentPlayingId) {
@@ -1787,23 +1748,11 @@
       });
     }
 
-    // タブ復帰時の安全なリカバリー処理
-    function handleVisibilityChange() {
-      if (document.visibilityState === 'visible') {
-        if (audioCtx && audioCtx.state === 'suspended') {
-          audioCtx.resume();
-        }
-        updateCanvasSize();
-        isHeadingInitialized = false; // ジャイロ方角を再キャリブレーション
-      } else {
-        if (isPlayingMusic) {
-          stopMusicPlayback();
-        }
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && isPlayingMusic) {
+        stopMusicPlayback();
       }
-    }
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('pageshow', handleVisibilityChange);
+    });
 
     window.addEventListener('DOMContentLoaded', () => {
       initThree();
