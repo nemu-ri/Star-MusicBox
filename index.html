@@ -358,10 +358,8 @@
     /* 明るい星（mag < 3.5）ほど低いオクターブ、暗い星ほど高いオクターブに設定 */
     function getOctaveFactor(mag) {
       if (mag < 3.5) {
-        // 明るい星ほど低いオクターブ（1/2倍 または 1/4倍）
         return mag < 0.0 ? 0.25 : 0.5;
       } else {
-        // 暗い星ほど高いオクターブ（2倍 または 4倍）
         return mag > 5.0 ? 4.0 : 2.0;
       }
     }
@@ -387,11 +385,7 @@
     /* 明るい星（magが小さい）ほど約6.0秒、暗い星ほど約0.7秒の余韻に調整 */
     function calculateNoteDuration(mag) {
       const normMag = Math.max(-1.5, Math.min(6.5, mag));
-      
-      // 明るさ割合 (1.0 = 明るい, 0.0 = 暗い)
       const brightness = (6.5 - normMag) / 8.0; 
-      
-      // 暗い星は 0.7秒、明るい星は約 6.0秒の長さへ
       return 0.7 + Math.pow(brightness, 2.0) * 5.3;
     }
 
@@ -1146,16 +1140,29 @@
       }
     }
 
-    function triggerMainScreenFlash(x, y) {
+    /* 音の長さ（duration）と明るさ（mag）に応じて波紋の大きさと消滅タイミングを計算 */
+    function triggerMainScreenFlash(x, y, duration, mag) {
+      const normMag = Math.max(-1.5, Math.min(6.5, mag));
+      const brightness = (6.5 - normMag) / 8.0; 
+      
+      // 明るい星ほど最大半径を大きく（18px〜65px）
+      const maxRadius = 18 + brightness * 47;
+      
+      // 余韻の長さに比例して波紋の拡散・衰退速度を設定（約6秒でゆったり／0.7秒で素早く消滅）
+      const expansionRate = maxRadius / (duration * 60); 
+      const fadeRate = 1.0 / (duration * 60);
+
       mainScreenFlashes.push({
         x,
         y,
         radius: 2,
-        maxRadius: 28,
+        maxRadius,
         ringCount: 3,
-        ringSpacing: 6,
+        ringSpacing: Math.max(4, maxRadius * 0.2),
         opacity: 1.0,
-        coreBrightness: 1.0
+        coreBrightness: 1.0,
+        expansionRate,
+        fadeRate
       });
     }
 
@@ -1196,9 +1203,9 @@
           }
         }
 
-        flash.radius += 0.85; 
-        flash.opacity -= 0.022;
-        flash.coreBrightness -= 0.05;
+        flash.radius += flash.expansionRate;
+        flash.opacity -= flash.fadeRate;
+        flash.coreBrightness -= flash.fadeRate * 2.0;
 
         if (flash.opacity <= 0 || flash.radius >= flash.maxRadius) {
           mainScreenFlashes.splice(i, 1);
@@ -1208,17 +1215,26 @@
       effectCtx.restore();
     }
 
-    function triggerThumbnailFlash(itemId, normX, normY) {
+    function triggerThumbnailFlash(itemId, normX, normY, duration, mag) {
+      const normMag = Math.max(-1.5, Math.min(6.5, mag));
+      const brightness = (6.5 - normMag) / 8.0;
+      
+      const maxRadius = 10 + brightness * 25;
+      const expansionRate = maxRadius / (duration * 60);
+      const fadeRate = 1.0 / (duration * 60);
+
       activeFlashes.push({
         itemId,
         normX,
         normY,
         radius: 1,
-        maxRadius: 15,
+        maxRadius,
         ringCount: 2,
-        ringSpacing: 4,
+        ringSpacing: Math.max(3, maxRadius * 0.25),
         opacity: 1.0,
-        coreBrightness: 1.0
+        coreBrightness: 1.0,
+        expansionRate,
+        fadeRate
       });
     }
 
@@ -1279,9 +1295,9 @@
 
         ctx.restore();
 
-        flash.radius += 0.55;
-        flash.opacity -= 0.03;
-        flash.coreBrightness -= 0.06;
+        flash.radius += flash.expansionRate;
+        flash.opacity -= flash.fadeRate;
+        flash.coreBrightness -= flash.fadeRate * 2.0;
 
         if (flash.opacity <= 0 || flash.radius >= flash.maxRadius) {
           activeFlashes.splice(i, 1);
@@ -1435,10 +1451,10 @@
 
           const flashX = star.normX * windowWidth;
           const flashY = star.normY * windowHeight;
-          triggerMainScreenFlash(flashX, flashY);
+          triggerMainScreenFlash(flashX, flashY, noteDuration, star.mag);
 
           if (currentPlayingId) {
-            triggerThumbnailFlash(currentPlayingId, star.normX, star.normY);
+            triggerThumbnailFlash(currentPlayingId, star.normX, star.normY, noteDuration, star.mag);
           }
         }
       });
