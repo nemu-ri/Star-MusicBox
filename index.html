@@ -145,21 +145,23 @@
     input:checked + .slider { background-color: #2563eb; }
     input:checked + .slider:before { transform: translateX(22px); }
 
-    .accordion-header {
-      font-size: 13px; color: rgba(255,255,255,0.9); margin-bottom: 8px; cursor: pointer;
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 8px 12px; background: rgba(255,255,255,0.08); border-radius: 8px;
-      user-select: none;
+    .section-title {
+      font-size: 13px; color: rgba(255,255,255,0.9); margin-bottom: 8px;
+      display: flex; align-items: center; gap: 6px;
+      padding: 4px 0;
     }
-    .accordion-content { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; border-radius: 8px; background: rgba(0,0,0,0.3); }
-    /* PC・スマホ双方で安定して開閉操作・リスト選択ができるよう調整 */
-    .accordion-content.open { max-height: 500px; overflow-y: auto; margin-bottom: 15px; }
 
-    #city-list { border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; }
+    #city-list { 
+      border: 1px solid rgba(255,255,255,0.15); 
+      border-radius: 8px; 
+      max-height: 180px; 
+      overflow-y: auto; 
+      background: rgba(0,0,0,0.3);
+      margin-bottom: 15px;
+    }
     .city-item {
       padding: 10px 14px; font-size: 13px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.08);
       display: flex; justify-content: space-between; align-items: center; transition: background 0.2s;
-      pointer-events: auto;
     }
     .city-item:last-child { border-bottom: none; }
     .city-item:hover { background: rgba(255,255,255,0.15); }
@@ -253,15 +255,10 @@
       </label>
     </div>
 
-    <div class="accordion-header" id="city-accordion-btn">
-      <span style="display:flex; align-items:center; gap:6px;">
-        <span class="material-symbols-outlined">location_on</span> 観測地点を選択
-      </span>
-      <span class="material-symbols-outlined" id="accordion-arrow">expand_more</span>
+    <div class="section-title">
+      <span class="material-symbols-outlined">location_on</span> 観測地点を選択
     </div>
-    <div class="accordion-content" id="city-accordion-content">
-      <div id="city-list"></div>
-    </div>
+    <div id="city-list"></div>
 
     <hr style="border:0; border-top: 1px solid rgba(255,255,255,0.15); margin: 20px 0;">
 
@@ -309,8 +306,6 @@
 
     let audioCtx = null;
     let masterFilter = null;
-    let masterGain = null;
-    let masterCompressor = null;
     let isPlayingMusic = false;
     const scanDuration = 60; // 60秒周期
     let playStartTime = 0;
@@ -362,7 +357,7 @@
 
     function getOctaveFactor(mag) {
       if (mag >= 3.5) {
-        return 2.0;
+        return 2.0; 
       }
       const octaveShift = Math.round(mag - 3.0);
       const effectiveShift = Math.min(0, octaveShift);
@@ -385,6 +380,14 @@
       while (freq < 60)   freq *= 2;
 
       return { freq, spectralClass };
+    }
+
+    /* 星の明るさ(等級)からMIDIノートの長さ(duration)を動的計算 */
+    function calculateNoteDuration(mag) {
+      const normMag = Math.max(-1.5, Math.min(6.5, mag));
+      // 1等星などの明るい星は約4.2秒、6等星などの暗い星は約0.8秒
+      const t = (6.5 - normMag) / 8.0; 
+      return 0.8 + Math.pow(t, 1.8) * 3.4;
     }
 
     function clearGroup(group) {
@@ -1041,39 +1044,23 @@
       }
     }
 
-    /* 音律・オーディオ設計の修正（ダイナミクス・リミッターを追加してハウリングを抑制） */
     function initAudioContext() {
       if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         
-        // ローパスフィルター（マイルドな響きへ調整）
         masterFilter = audioCtx.createBiquadFilter();
         masterFilter.type = 'lowpass';
-        masterFilter.frequency.setValueAtTime(1800, audioCtx.currentTime);
-
-        // マスターゲイン（過大入力を安全なレベルまで制御）
-        masterGain = audioCtx.createGain();
-        masterGain.gain.setValueAtTime(0.7, audioCtx.currentTime);
-
-        // ダイナミクスコンプレッサー/リミッター（重複発音時のクリッピング・音割れ・ループ共振をカット）
-        masterCompressor = audioCtx.createDynamicsCompressor();
-        masterCompressor.threshold.setValueAtTime(-12, audioCtx.currentTime);
-        masterCompressor.knee.setValueAtTime(30, audioCtx.currentTime);
-        masterCompressor.ratio.setValueAtTime(12, audioCtx.currentTime);
-        masterCompressor.attack.setValueAtTime(0.003, audioCtx.currentTime);
-        masterCompressor.release.setValueAtTime(0.25, audioCtx.currentTime);
-
-        // 接続チェーン: masterFilter -> masterGain -> masterCompressor -> destination
-        masterFilter.connect(masterGain);
-        masterGain.connect(masterCompressor);
-        masterCompressor.connect(audioCtx.destination);
+        // ハウリング・耳障りな高音域の重なりを抑えるためカットオフを1500Hzに調整
+        masterFilter.frequency.setValueAtTime(1500, audioCtx.currentTime);
+        masterFilter.connect(audioCtx.destination);
       }
       if (audioCtx.state === 'suspended') {
         audioCtx.resume();
       }
     }
 
-    function scheduleInstrumentSound(freq, volume, startTime, pan, spectralClass, isBass = false) {
+    /* 各色（スペクトル型）と星の明るさに応じるノート発音処理 */
+    function scheduleInstrumentSound(freq, volume, startTime, pan, spectralClass, duration, isBass = false) {
       if (!audioCtx) return;
 
       const gainNode = audioCtx.createGain();
@@ -1087,21 +1074,24 @@
         gainNode.connect(masterFilter || audioCtx.destination);
       }
 
+      // 低音域（ブライト星/ベース音）の音源生成
       if (isBass) {
         const osc = audioCtx.createOscillator();
         osc.type = 'sine';
-        const duration = 5.0;
+        const bassDuration = Math.max(duration, 3.5);
         gainNode.gain.setValueAtTime(0.0001, startTime);
         gainNode.gain.linearRampToValueAtTime(0.18, startTime + 0.6);
-        gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + bassDuration);
 
         osc.connect(gainNode);
         osc.start(startTime);
-        osc.stop(startTime + duration);
+        osc.stop(startTime + bassDuration);
         return;
       }
 
+      // 色 (スペクトル型) ごとの音色合成
       if (spectralClass === 'O' || spectralClass === 'B') {
+        // 【青・青白星】 カリンバ / クリスタルライヤー
         const osc = audioCtx.createOscillator();
         const osc2 = audioCtx.createOscillator();
         osc.type = 'sine';
@@ -1110,7 +1100,6 @@
         osc.frequency.setValueAtTime(freq, startTime);
         osc2.frequency.setValueAtTime(freq * 2.001, startTime);
 
-        const duration = 2.5;
         gainNode.gain.setValueAtTime(0.0001, startTime);
         gainNode.gain.linearRampToValueAtTime(volume * 0.18, startTime + 0.012);
         gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
@@ -1123,6 +1112,7 @@
         osc2.stop(startTime + duration);
 
       } else if (spectralClass === 'A' || spectralClass === 'F') {
+        // 【白・黄白星】 クラシックピアノ
         const osc = audioCtx.createOscillator();
         const osc2 = audioCtx.createOscillator();
         osc.type = 'sine';
@@ -1131,10 +1121,9 @@
         osc.frequency.setValueAtTime(freq, startTime);
         osc2.frequency.setValueAtTime(freq * 2.0, startTime);
 
-        const duration = 2.8;
         gainNode.gain.setValueAtTime(0.0001, startTime);
         gainNode.gain.linearRampToValueAtTime(volume * 0.20, startTime + 0.015);
-        gainNode.gain.exponentialRampToValueAtTime(volume * 0.06, startTime + 0.3);
+        gainNode.gain.exponentialRampToValueAtTime(Math.max(0.0001, volume * 0.05), startTime + Math.min(0.3, duration * 0.25));
         gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
         osc.connect(gainNode);
@@ -1145,11 +1134,11 @@
         osc2.stop(startTime + duration);
 
       } else if (spectralClass === 'G' || spectralClass === 'K') {
+        // 【黄・オレンジ星】 アコースティックギター / ハープ
         const osc = audioCtx.createOscillator();
         osc.type = 'triangle';
         osc.frequency.setValueAtTime(freq, startTime);
 
-        const duration = 2.2;
         gainNode.gain.setValueAtTime(0.0001, startTime);
         gainNode.gain.linearRampToValueAtTime(volume * 0.16, startTime + 0.02);
         gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
@@ -1159,13 +1148,13 @@
         osc.stop(startTime + duration);
 
       } else {
+        // 【赤星 (M型)】 温かいシンセパッド / ヴァイブ
         const osc = audioCtx.createOscillator();
         osc.type = 'sine';
         osc.frequency.setValueAtTime(freq, startTime);
 
-        const duration = 3.5;
         gainNode.gain.setValueAtTime(0.0001, startTime);
-        gainNode.gain.linearRampToValueAtTime(volume * 0.18, startTime + 0.15);
+        gainNode.gain.linearRampToValueAtTime(volume * 0.18, startTime + 0.12);
         gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
         osc.connect(gainNode);
@@ -1428,19 +1417,20 @@
           lastSoundTime = currentTime;
 
           const isBright = star.mag < 1.5;
+          const noteDuration = calculateNoteDuration(star.mag);
 
           if (isBright) {
             const bassIndex = Math.floor(pitchAxis * (bassScale.length - 1));
             const freq = bassScale[bassIndex];
             const pan = (pitchAxis - 0.5) * 1.6;
-            scheduleInstrumentSound(freq, 0.35, currentTime, pan, 'M', true);
+            scheduleInstrumentSound(freq, 0.35, currentTime, pan, 'M', noteDuration, true);
           } else {
             const normMag = Math.max(-1.5, Math.min(6.5, star.mag));
-            const volume = Math.max(0.03, 0.28 - ((normMag - 1.0) / 5.5) * 0.25);
+            const volume = Math.max(0.03, 0.24 - ((normMag - 1.0) / 5.5) * 0.20);
             const pan = (pitchAxis - 0.5) * 1.8;
 
             const pitchData = calculatePitch(star.mag, star.bv);
-            scheduleInstrumentSound(pitchData.freq, volume, currentTime, pan, pitchData.spectralClass, false);
+            scheduleInstrumentSound(pitchData.freq, volume, currentTime, pan, pitchData.spectralClass, noteDuration, false);
           }
 
           if (star.origIndex !== undefined) {
@@ -1690,9 +1680,6 @@
     const manualToggle = document.getElementById('manual-toggle');
     const constellationToggle = document.getElementById('constellation-toggle');
     const cityListEl = document.getElementById('city-list');
-    const cityAccordionBtn = document.getElementById('city-accordion-btn');
-    const cityAccordionContent = document.getElementById('city-accordion-content');
-    const accordionArrow = document.getElementById('accordion-arrow');
     const reloadBtn = document.getElementById('reload-btn');
     const saveBtn = document.getElementById('save-btn');
     const imageModal = document.getElementById('image-modal');
@@ -1738,11 +1725,6 @@
     constellationToggle.addEventListener('change', (e) => {
       showConstellations = e.target.checked;
       buildConstellations(new Date());
-    });
-
-    cityAccordionBtn.addEventListener('click', () => {
-      cityAccordionContent.classList.toggle('open');
-      accordionArrow.innerText = cityAccordionContent.classList.contains('open') ? 'expand_less' : 'expand_more';
     });
 
     function renderCityList() {
