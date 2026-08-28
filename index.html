@@ -381,11 +381,11 @@
       return { freq, spectralClass };
     }
 
-    /* 暗い星の残響（最大音長）を1.0秒に設定 */
+    /* 最短1.0秒 〜 最大8.5秒に拡張 */
     function calculateNoteDuration(mag) {
       const normMag = Math.max(-1.5, Math.min(6.5, mag));
       const brightness = (6.5 - normMag) / 8.0; 
-      return 0.2 + Math.pow(brightness, 2.0) * 0.8; // 残響約1.0秒へ短縮
+      return 1.0 + Math.pow(brightness, 2.0) * 7.5;
     }
 
     function calculateVolumeByMagnitude(mag) {
@@ -1053,7 +1053,7 @@
         
         masterFilter = audioCtx.createBiquadFilter();
         masterFilter.type = 'lowpass';
-        masterFilter.frequency.setValueAtTime(3000, audioCtx.currentTime); // オルゴールの高音を通すため少しカットオフを上昇
+        masterFilter.frequency.setValueAtTime(2200, audioCtx.currentTime); // シンセ用に少し明るく拡張
         masterFilter.connect(audioCtx.destination);
       }
       if (audioCtx.state === 'suspended') {
@@ -1061,7 +1061,7 @@
       }
     }
 
-    /* 音源処理：3.5等星未満はベース、3.5等以上はオルゴール音 */
+    /* シンセサイザー音源処理 */
     function scheduleInstrumentSound(freq, volume, startTime, pan, spectralClass, duration, isBass = false) {
       if (!audioCtx) return;
 
@@ -1078,45 +1078,63 @@
       }
 
       if (isBass) {
-        // --- ベース音（明るい星の残響：4秒） ---
+        // --- シンセベース音（3.5等星未満の明るい星） ---
         const osc = audioCtx.createOscillator();
-        osc.type = 'sine';
+        osc.type = 'sawtooth'; // 鋸歯状波でシンセベースの深みを作成
 
-        const bassDuration = 4.0; // 明るい星の残響を4秒に設定
+        const filter = audioCtx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(350, startTime);
+        filter.Q.setValueAtTime(3, startTime);
+
+        const bassDuration = Math.max(duration, 4.0);
         
         gainNode.gain.setValueAtTime(0.0001, startTime);
-        gainNode.gain.linearRampToValueAtTime(volume * 0.9, startTime + 0.15); 
+        gainNode.gain.linearRampToValueAtTime(volume * 0.8, startTime + 0.08); 
         gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + bassDuration);
 
         osc.frequency.setValueAtTime(freq, startTime);
-        osc.connect(gainNode);
+        osc.connect(filter);
+        filter.connect(gainNode);
+
         osc.start(startTime);
         osc.stop(startTime + bassDuration);
         return;
       }
 
-      // --- オルゴールシンセ（暗い星の音） ---
-      const attackTime = 0.002; // 金属弁の弾き（アタック）
+      // --- シンセパッド／リード音（3.5等星以上の星） ---
+      const attackTime = 0.04; 
+      const decayTime = Math.min(0.6, duration * 0.4);
+      const sustainLevel = volume * 0.4;
 
       const osc1 = audioCtx.createOscillator();
       const osc2 = audioCtx.createOscillator();
 
-      osc1.type = 'sine';
-      osc2.type = 'sine'; // 透明感のあるサイン波を重ねる
+      osc1.type = 'sawtooth'; // シンセらしい豊かな倍音
+      osc2.type = 'triangle'; // まろやかな厚みを加える
 
+      // わずかなデチューン（音を揺らして幻想的な広がりを生む）
       osc1.frequency.setValueAtTime(freq, startTime);
-      osc2.frequency.setValueAtTime(freq * 3.0, startTime); // 高次倍音（金属的な鳴り）
+      osc2.frequency.setValueAtTime(freq * 1.003, startTime);
+
+      // ローパスフィルターでシンセ特有のマイルドで幻想的なトーンを作る
+      const synthFilter = audioCtx.createBiquadFilter();
+      synthFilter.type = 'lowpass';
+      synthFilter.frequency.setValueAtTime(2800, startTime);
+      synthFilter.frequency.exponentialRampToValueAtTime(800, startTime + duration);
 
       const osc2Gain = audioCtx.createGain();
-      osc2Gain.gain.setValueAtTime(0.15, startTime);
+      osc2Gain.gain.setValueAtTime(0.4, startTime);
 
-      osc1.connect(gainNode);
+      osc1.connect(synthFilter);
       osc2.connect(osc2Gain);
-      osc2Gain.connect(gainNode);
+      osc2Gain.connect(synthFilter);
+      synthFilter.connect(gainNode);
 
-      // オルゴールらしい急峻なアタックと自然な減衰
+      // ADSRエンベロープ（緩やかなアタックと減衰）
       gainNode.gain.setValueAtTime(0.0001, startTime);
-      gainNode.gain.linearRampToValueAtTime(volume * 1.2, startTime + attackTime);
+      gainNode.gain.linearRampToValueAtTime(volume * 0.7, startTime + attackTime);
+      gainNode.gain.exponentialRampToValueAtTime(Math.max(0.0001, sustainLevel), startTime + attackTime + decayTime);
       gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
       osc1.start(startTime);
@@ -1412,13 +1430,11 @@
           const volume = calculateVolumeByMagnitude(star.mag);
 
           if (isBassStar) {
-            // 3.5等星未満はベース音
             const bassIndex = Math.floor(pitchAxis * (bassScale.length - 1));
             const freq = bassScale[bassIndex];
             const pan = (pitchAxis - 0.5) * 1.6;
             scheduleInstrumentSound(freq, volume, currentTime, pan, 'M', noteDuration, true);
           } else {
-            // 3.5等星以上〜5等星超はオルゴール音
             const pan = (pitchAxis - 0.5) * 1.8;
             const pitchData = calculatePitch(star.mag, star.bv);
             scheduleInstrumentSound(pitchData.freq, volume, currentTime, pan, pitchData.spectralClass, noteDuration, false);
