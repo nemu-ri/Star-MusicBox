@@ -355,13 +355,15 @@
       return 'M';
     }
 
+    /* 明るい星（mag < 3.5）ほど低いオクターブ、暗い星ほど高いオクターブに設定 */
     function getOctaveFactor(mag) {
-      if (mag >= 3.5) {
-        return 2.0; 
+      if (mag < 3.5) {
+        // 明るい星ほど低いオクターブ（1/2倍 または 1/4倍）
+        return mag < 0.0 ? 0.25 : 0.5;
+      } else {
+        // 暗い星ほど高いオクターブ（2倍 または 4倍）
+        return mag > 5.0 ? 4.0 : 2.0;
       }
-      const octaveShift = Math.round(mag - 3.0);
-      const effectiveShift = Math.min(0, octaveShift);
-      return Math.pow(2, effectiveShift);
     }
 
     function calculatePitch(mag, bv) {
@@ -382,19 +384,15 @@
       return { freq, spectralClass };
     }
 
-    /* =========================================================
-       1. 等級（明るさ）に応じたノート長（音響時間）の計算
-       明るい星（magが小さい/負）ほど長くゆったり残響を残す
-       ========================================================= */
+    /* 明るい星（magが小さい）ほど約6.0秒、暗い星ほど約0.7秒の余韻に調整 */
     function calculateNoteDuration(mag) {
-      // mag: -1.5 (超明るい) 〜 6.5 (暗い)
       const normMag = Math.max(-1.5, Math.min(6.5, mag));
       
-      // 明るさの割合 (1.0 = 一番明るい, 0.0 = 暗い)
+      // 明るさ割合 (1.0 = 明るい, 0.0 = 暗い)
       const brightness = (6.5 - normMag) / 8.0; 
       
-      // 暗い星は 0.6秒程度、明るい星は最大 5.5秒程度の長い余韻へ
-      return 0.6 + Math.pow(brightness, 2.0) * 4.9;
+      // 暗い星は 0.7秒、明るい星は約 6.0秒の長さへ
+      return 0.7 + Math.pow(brightness, 2.0) * 5.3;
     }
 
     function clearGroup(group) {
@@ -1055,7 +1053,6 @@
       if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         
-        // 水中のようなマイルドな残響・響きを演出するローパスフィルター
         masterFilter = audioCtx.createBiquadFilter();
         masterFilter.type = 'lowpass';
         masterFilter.frequency.setValueAtTime(1200, audioCtx.currentTime);
@@ -1066,16 +1063,12 @@
       }
     }
 
-    /* =========================================================
-       2. 入眠・水中の波をイメージした音源生成処理
-       ========================================================= */
     function scheduleInstrumentSound(freq, volume, startTime, pan, spectralClass, duration, isBass = false) {
       if (!audioCtx) return;
 
       const gainNode = audioCtx.createGain();
       let pannerNode = null;
 
-      // パン（左右の音の広がり）の設定
       if (audioCtx.createStereoPanner) {
         pannerNode = audioCtx.createStereoPanner();
         pannerNode.pan.setValueAtTime(Math.max(-0.85, Math.min(0.85, pan)), startTime);
@@ -1085,14 +1078,12 @@
         gainNode.connect(masterFilter || audioCtx.destination);
       }
 
-      // --- Bass（低音・土台の波の響き） ---
       if (isBass) {
         const osc = audioCtx.createOscillator();
-        osc.type = 'sine'; // 柔らかな丸い低音
+        osc.type = 'sine';
 
-        const bassDuration = Math.max(duration, 4.5); // ゆったり長い余韻
+        const bassDuration = Math.max(duration, 4.5);
         
-        // なだらかな包み込むようなアタック＆リリース
         gainNode.gain.setValueAtTime(0.0001, startTime);
         gainNode.gain.linearRampToValueAtTime(0.15, startTime + 1.2); 
         gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + bassDuration);
@@ -1104,51 +1095,37 @@
         return;
       }
 
-      // --- 高域/低域に応じた残響・刺激抑止パラメータの計算 ---
-      // 高い音（freq > 600Hz等）ほど残響を抑え、アタックを優しくする
       const isHighPitch = freq > 600;
       const highFrequencyFactor = Math.min(1.0, Math.max(0.0, (freq - 400) / 1200)); 
       
-      // 高音域・暗い星は余韻をカットして耳に触らないように調整
       const effectiveDuration = isHighPitch 
         ? duration * (1.0 - highFrequencyFactor * 0.5) 
         : duration;
 
-      // アタック（音の立ち上がり時間）：高音ほど丸く優しく入る
       const attackTime = isHighPitch ? 0.08 + highFrequencyFactor * 0.1 : 0.03;
-      
-      // 音量補正：高音域の音量は抑えめに
       const adjustedVolume = volume * (1.0 - highFrequencyFactor * 0.4);
 
-      // --- 星のスペクトル（色）ごとの波・水滴風シンセ音 ---
       const osc1 = audioCtx.createOscillator();
       const osc2 = audioCtx.createOscillator();
 
-      // 波のような透明感を出すためサイン波を基本に使用
       osc1.type = 'sine';
       
       if (spectralClass === 'O' || spectralClass === 'B') {
-        // 青・白（高音域・涼しげな水中トーン）：わずかなデチューンで波の揺らぎ表現
         osc2.type = 'sine';
         osc1.frequency.setValueAtTime(freq, startTime);
-        osc2.frequency.setValueAtTime(freq * 1.002, startTime); // 微小なピッチズレで波の干渉を起こす
+        osc2.frequency.setValueAtTime(freq * 1.002, startTime);
       } else if (spectralClass === 'A' || spectralClass === 'F') {
-        // 緑・黄（温かみのある水滴・静かな波）：オクターブ上の微小な重ね
         osc2.type = 'sine';
         osc1.frequency.setValueAtTime(freq, startTime);
         osc2.frequency.setValueAtTime(freq * 2.0, startTime);
       } else {
-        // 赤・オレンジ（深海・深い波の響き）：単一の深いサイン波
         osc2.type = 'sine';
         osc1.frequency.setValueAtTime(freq, startTime);
-        osc2.frequency.setValueAtTime(freq * 0.5, startTime); // 低域を添える
+        osc2.frequency.setValueAtTime(freq * 0.5, startTime);
       }
 
-      // エンベロープ（音量変化）設計：水中を漂うようなエンベロープ
       gainNode.gain.setValueAtTime(0.0001, startTime);
-      // アタック（ソフトに入り込む）
       gainNode.gain.linearRampToValueAtTime(adjustedVolume * 0.18, startTime + attackTime);
-      // サステイン〜ディケイ（優しく減衰）
       gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + effectiveDuration);
 
       osc1.connect(gainNode);
@@ -1169,21 +1146,19 @@
       }
     }
 
-    /* メイン画面用のマルチウェーブ（波紋干渉）発生処理 */
     function triggerMainScreenFlash(x, y) {
       mainScreenFlashes.push({
         x,
         y,
         radius: 2,
-        maxRadius: 28,      // 波紋の最大半径
-        ringCount: 3,       // 同心円の数
-        ringSpacing: 6,     // 同心円の間隔
+        maxRadius: 28,
+        ringCount: 3,
+        ringSpacing: 6,
         opacity: 1.0,
         coreBrightness: 1.0
       });
     }
 
-    /* メイン画面の波紋更新描画（加算合成による波動の干渉を表現） */
     function updateAndDrawMainScreenFlashes() {
       if (!effectCtx) return;
       effectCtx.clearRect(0, 0, effectCanvas.width, effectCanvas.height);
@@ -1191,13 +1166,11 @@
       if (mainScreenFlashes.length === 0) return;
 
       effectCtx.save();
-      // 波と波が重なった部分を明るく発光させる干渉（アルファ加算ブレンド）効果
       effectCtx.globalCompositeOperation = 'lighter';
 
       for (let i = mainScreenFlashes.length - 1; i >= 0; i--) {
         const flash = mainScreenFlashes[i];
 
-        // 中心コアの点滅
         if (flash.coreBrightness > 0) {
           effectCtx.beginPath();
           effectCtx.arc(flash.x, flash.y, 4, 0, Math.PI * 2);
@@ -1207,7 +1180,6 @@
           effectCtx.fill();
         }
 
-        // 複数の同心波紋を描画して、波の広がりの干渉を演出
         for (let r = 0; r < flash.ringCount; r++) {
           const currentRadius = flash.radius - (r * flash.ringSpacing);
           if (currentRadius > 0) {
@@ -1236,7 +1208,6 @@
       effectCtx.restore();
     }
 
-    /* サムネイル表示用の小さな波紋発生処理 */
     function triggerThumbnailFlash(itemId, normX, normY) {
       activeFlashes.push({
         itemId,
@@ -1251,7 +1222,6 @@
       });
     }
 
-    /* サムネイル画面の波紋更新描画 */
     function updateAndDrawThumbnailFlashes() {
       if (activeFlashes.length === 0) return;
 
