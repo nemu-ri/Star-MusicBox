@@ -149,14 +149,17 @@
       font-size: 13px; color: rgba(255,255,255,0.9); margin-bottom: 8px; cursor: pointer;
       display: flex; justify-content: space-between; align-items: center;
       padding: 8px 12px; background: rgba(255,255,255,0.08); border-radius: 8px;
+      user-select: none;
     }
     .accordion-content { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; border-radius: 8px; background: rgba(0,0,0,0.3); }
-    .accordion-content.open { max-height: 240px; overflow-y: auto; margin-bottom: 15px; }
+    /* PC・スマホ双方で安定して開閉操作・リスト選択ができるよう調整 */
+    .accordion-content.open { max-height: 500px; overflow-y: auto; margin-bottom: 15px; }
 
     #city-list { border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; }
     .city-item {
       padding: 10px 14px; font-size: 13px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.08);
       display: flex; justify-content: space-between; align-items: center; transition: background 0.2s;
+      pointer-events: auto;
     }
     .city-item:last-child { border-bottom: none; }
     .city-item:hover { background: rgba(255,255,255,0.15); }
@@ -306,6 +309,8 @@
 
     let audioCtx = null;
     let masterFilter = null;
+    let masterGain = null;
+    let masterCompressor = null;
     let isPlayingMusic = false;
     const scanDuration = 60; // 60秒周期
     let playStartTime = 0;
@@ -318,7 +323,6 @@
     let activeFlashes = [];
 
     // Fナチュラルマイナースケール (F, G, Ab, Bb, C, Db, Eb) の基本ピッチ (Hz)
-    // 基準オクターブ (Central Octave / 3等星基準)
     const fNaturalMinorBase = [
       174.61, // F3
       196.00, // G3
@@ -346,7 +350,6 @@
       { name: "ホノルル", lat: 21.3069, lon: -157.8583 }
     ];
 
-    /* 色指数(B-V)からスペクトル型(O,B,A,F,G,K,M)を判定 */
     function getSpectralClass(bv) {
       if (bv < -0.2) return 'O';
       if (bv < 0.0)  return 'B';
@@ -357,29 +360,19 @@
       return 'M';
     }
 
-    /* 等級(mag)からオクターブ倍率を取得 
-       3.5等星未満（明るい星）は基準オクターブまたは低音域へシフト
-       4等星以上（暗い星）は3等星の1オクターブ上（2倍）に設定 */
     function getOctaveFactor(mag) {
       if (mag >= 3.5) {
-        return 2.0; // 4等星以上は3等星の1オクターブ上
+        return 2.0;
       }
       const octaveShift = Math.round(mag - 3.0);
       const effectiveShift = Math.min(0, octaveShift);
       return Math.pow(2, effectiveShift);
     }
 
-    /* スペクトル型（青:高音〜赤:低音）と等級（オクターブ）に基づく周波数計算 (上限1700Hz) */
     function calculatePitch(mag, bv) {
       const spectralClass = getSpectralClass(bv);
       const spectralNoteMap = {
-        'O': 6, // Eb
-        'B': 5, // Db
-        'A': 4, // C
-        'F': 3, // Bb
-        'G': 2, // Ab
-        'K': 1, // G
-        'M': 0  // F
+        'O': 6, 'B': 5, 'A': 4, 'F': 3, 'G': 2, 'K': 1, 'M': 0
       };
 
       const noteIdx = spectralNoteMap[spectralClass] !== undefined ? spectralNoteMap[spectralClass] : 3;
@@ -388,7 +381,6 @@
 
       let freq = baseFreq * octaveFactor;
       
-      // 上限を約1700Hzに抑える設定（1700Hzを超えそうな場合は1オクターブ下げる）
       while (freq > 1700) freq /= 2;
       while (freq < 60)   freq *= 2;
 
@@ -1049,21 +1041,38 @@
       }
     }
 
+    /* 音律・オーディオ設計の修正（ダイナミクス・リミッターを追加してハウリングを抑制） */
     function initAudioContext() {
       if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         
+        // ローパスフィルター（マイルドな響きへ調整）
         masterFilter = audioCtx.createBiquadFilter();
         masterFilter.type = 'lowpass';
-        masterFilter.frequency.setValueAtTime(2000, audioCtx.currentTime);
-        masterFilter.connect(audioCtx.destination);
+        masterFilter.frequency.setValueAtTime(1800, audioCtx.currentTime);
+
+        // マスターゲイン（過大入力を安全なレベルまで制御）
+        masterGain = audioCtx.createGain();
+        masterGain.gain.setValueAtTime(0.7, audioCtx.currentTime);
+
+        // ダイナミクスコンプレッサー/リミッター（重複発音時のクリッピング・音割れ・ループ共振をカット）
+        masterCompressor = audioCtx.createDynamicsCompressor();
+        masterCompressor.threshold.setValueAtTime(-12, audioCtx.currentTime);
+        masterCompressor.knee.setValueAtTime(30, audioCtx.currentTime);
+        masterCompressor.ratio.setValueAtTime(12, audioCtx.currentTime);
+        masterCompressor.attack.setValueAtTime(0.003, audioCtx.currentTime);
+        masterCompressor.release.setValueAtTime(0.25, audioCtx.currentTime);
+
+        // 接続チェーン: masterFilter -> masterGain -> masterCompressor -> destination
+        masterFilter.connect(masterGain);
+        masterGain.connect(masterCompressor);
+        masterCompressor.connect(audioCtx.destination);
       }
       if (audioCtx.state === 'suspended') {
         audioCtx.resume();
       }
     }
 
-    /* 各色（スペクトル型）に応じた入眠向け合成音源生成 */
     function scheduleInstrumentSound(freq, volume, startTime, pan, spectralClass, isBass = false) {
       if (!audioCtx) return;
 
@@ -1078,13 +1087,12 @@
         gainNode.connect(masterFilter || audioCtx.destination);
       }
 
-      // 低音域（ブライト星/ベース音）の音源生成
       if (isBass) {
         const osc = audioCtx.createOscillator();
         osc.type = 'sine';
-        const duration = 6.0;
+        const duration = 5.0;
         gainNode.gain.setValueAtTime(0.0001, startTime);
-        gainNode.gain.linearRampToValueAtTime(0.2, startTime + 0.8);
+        gainNode.gain.linearRampToValueAtTime(0.18, startTime + 0.6);
         gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
         osc.connect(gainNode);
@@ -1093,9 +1101,7 @@
         return;
       }
 
-      // 色 (スペクトル型) ごとの音色合成
       if (spectralClass === 'O' || spectralClass === 'B') {
-        // 【青・青白星】 カリンバ / クリスタルライヤー（澄んだ透明感）
         const osc = audioCtx.createOscillator();
         const osc2 = audioCtx.createOscillator();
         osc.type = 'sine';
@@ -1104,9 +1110,9 @@
         osc.frequency.setValueAtTime(freq, startTime);
         osc2.frequency.setValueAtTime(freq * 2.001, startTime);
 
-        const duration = 2.8;
+        const duration = 2.5;
         gainNode.gain.setValueAtTime(0.0001, startTime);
-        gainNode.gain.linearRampToValueAtTime(volume * 0.22, startTime + 0.012);
+        gainNode.gain.linearRampToValueAtTime(volume * 0.18, startTime + 0.012);
         gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
         osc.connect(gainNode);
@@ -1117,7 +1123,6 @@
         osc2.stop(startTime + duration);
 
       } else if (spectralClass === 'A' || spectralClass === 'F') {
-        // 【白・黄白星】 クラシックピアノ（優しく豊かな減衰音）
         const osc = audioCtx.createOscillator();
         const osc2 = audioCtx.createOscillator();
         osc.type = 'sine';
@@ -1126,10 +1131,10 @@
         osc.frequency.setValueAtTime(freq, startTime);
         osc2.frequency.setValueAtTime(freq * 2.0, startTime);
 
-        const duration = 3.2;
+        const duration = 2.8;
         gainNode.gain.setValueAtTime(0.0001, startTime);
-        gainNode.gain.linearRampToValueAtTime(volume * 0.25, startTime + 0.015);
-        gainNode.gain.exponentialRampToValueAtTime(volume * 0.08, startTime + 0.3);
+        gainNode.gain.linearRampToValueAtTime(volume * 0.20, startTime + 0.015);
+        gainNode.gain.exponentialRampToValueAtTime(volume * 0.06, startTime + 0.3);
         gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
         osc.connect(gainNode);
@@ -1140,14 +1145,13 @@
         osc2.stop(startTime + duration);
 
       } else if (spectralClass === 'G' || spectralClass === 'K') {
-        // 【黄・オレンジ星】 アコースティックギター / ハープ（温かい弦のアタック）
         const osc = audioCtx.createOscillator();
         osc.type = 'triangle';
         osc.frequency.setValueAtTime(freq, startTime);
 
-        const duration = 2.5;
+        const duration = 2.2;
         gainNode.gain.setValueAtTime(0.0001, startTime);
-        gainNode.gain.linearRampToValueAtTime(volume * 0.20, startTime + 0.02);
+        gainNode.gain.linearRampToValueAtTime(volume * 0.16, startTime + 0.02);
         gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
         osc.connect(gainNode);
@@ -1155,14 +1159,13 @@
         osc.stop(startTime + duration);
 
       } else {
-        // 【赤星 (M型)】 温かいシンセパッド / ヴァイブ（深みと丸みのある余韻）
         const osc = audioCtx.createOscillator();
         osc.type = 'sine';
         osc.frequency.setValueAtTime(freq, startTime);
 
-        const duration = 4.0;
+        const duration = 3.5;
         gainNode.gain.setValueAtTime(0.0001, startTime);
-        gainNode.gain.linearRampToValueAtTime(volume * 0.22, startTime + 0.15);
+        gainNode.gain.linearRampToValueAtTime(volume * 0.18, startTime + 0.15);
         gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
         osc.connect(gainNode);
@@ -1432,7 +1435,6 @@
             const pan = (pitchAxis - 0.5) * 1.6;
             scheduleInstrumentSound(freq, 0.35, currentTime, pan, 'M', true);
           } else {
-            // 等級(mag)ごとに滑らかにボリュームを変化（1等星前後で最大0.28、6等星付近で最小0.03）
             const normMag = Math.max(-1.5, Math.min(6.5, star.mag));
             const volume = Math.max(0.03, 0.28 - ((normMag - 1.0) / 5.5) * 0.25);
             const pan = (pitchAxis - 0.5) * 1.8;
