@@ -355,7 +355,6 @@
       return 'M';
     }
 
-    /* 3.5等星未満は低音（ベース）、3.5等以上〜5.0等超はピアノ向け高音域に配置 */
     function getOctaveFactor(mag) {
       if (mag < 3.5) {
         return mag < 0.0 ? 0.25 : 0.5;
@@ -382,16 +381,15 @@
       return { freq, spectralClass };
     }
 
+    /* 暗い星の残響（最大音長）を1.0秒に設定 */
     function calculateNoteDuration(mag) {
       const normMag = Math.max(-1.5, Math.min(6.5, mag));
       const brightness = (6.5 - normMag) / 8.0; 
-      return 0.7 + Math.pow(brightness, 2.0) * 5.3;
+      return 0.2 + Math.pow(brightness, 2.0) * 0.8; // 残響約1.0秒へ短縮
     }
 
-    /* 等級に応じたボリューム計算：明るい星ほど大きく、暗い星ほど聞こえなくならない程度に小さく */
     function calculateVolumeByMagnitude(mag) {
       const normMag = Math.max(-1.5, Math.min(6.5, mag));
-      // 0.05（暗い星）〜 0.35（非常に明るい星）に制御
       return 0.05 + (1.0 - (normMag + 1.5) / 8.0) * 0.30;
     }
 
@@ -1055,7 +1053,7 @@
         
         masterFilter = audioCtx.createBiquadFilter();
         masterFilter.type = 'lowpass';
-        masterFilter.frequency.setValueAtTime(1500, audioCtx.currentTime);
+        masterFilter.frequency.setValueAtTime(3000, audioCtx.currentTime); // オルゴールの高音を通すため少しカットオフを上昇
         masterFilter.connect(audioCtx.destination);
       }
       if (audioCtx.state === 'suspended') {
@@ -1063,7 +1061,7 @@
       }
     }
 
-    /* ピアノ／ベース音源処理（3.5等星未満はベース、3.5等以上はピアノ） */
+    /* 音源処理：3.5等星未満はベース、3.5等以上はオルゴール音 */
     function scheduleInstrumentSound(freq, volume, startTime, pan, spectralClass, duration, isBass = false) {
       if (!audioCtx) return;
 
@@ -1080,11 +1078,11 @@
       }
 
       if (isBass) {
-        // --- ベース音（3.5等星未満の明るい星） ---
+        // --- ベース音（明るい星の残響：4秒） ---
         const osc = audioCtx.createOscillator();
         osc.type = 'sine';
 
-        const bassDuration = Math.max(duration, 4.0);
+        const bassDuration = 4.0; // 明るい星の残響を4秒に設定
         
         gainNode.gain.setValueAtTime(0.0001, startTime);
         gainNode.gain.linearRampToValueAtTime(volume * 0.9, startTime + 0.15); 
@@ -1097,31 +1095,28 @@
         return;
       }
 
-      // --- クラシックピアノシンセ（3.5等星以上の星） ---
-      const attackTime = 0.008; // ピアノのアタック
-      const decayTime = Math.min(0.4, duration * 0.3);
-      const sustainLevel = volume * 0.3;
+      // --- オルゴールシンセ（暗い星の音） ---
+      const attackTime = 0.002; // 金属弁の弾き（アタック）
 
       const osc1 = audioCtx.createOscillator();
       const osc2 = audioCtx.createOscillator();
 
       osc1.type = 'sine';
-      osc2.type = 'triangle'; // アタックに厚みを加える三角波
+      osc2.type = 'sine'; // 透明感のあるサイン波を重ねる
 
       osc1.frequency.setValueAtTime(freq, startTime);
-      osc2.frequency.setValueAtTime(freq * 2.001, startTime); // かすかな倍音
+      osc2.frequency.setValueAtTime(freq * 3.0, startTime); // 高次倍音（金属的な鳴り）
 
       const osc2Gain = audioCtx.createGain();
-      osc2Gain.gain.setValueAtTime(0.2, startTime);
+      osc2Gain.gain.setValueAtTime(0.15, startTime);
 
       osc1.connect(gainNode);
       osc2.connect(osc2Gain);
       osc2Gain.connect(gainNode);
 
-      // ADSRエンベロープ（アタック＆減衰）
+      // オルゴールらしい急峻なアタックと自然な減衰
       gainNode.gain.setValueAtTime(0.0001, startTime);
-      gainNode.gain.linearRampToValueAtTime(volume, startTime + attackTime);
-      gainNode.gain.exponentialRampToValueAtTime(Math.max(0.0001, sustainLevel), startTime + attackTime + decayTime);
+      gainNode.gain.linearRampToValueAtTime(volume * 1.2, startTime + attackTime);
       gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
       osc1.start(startTime);
@@ -1139,7 +1134,6 @@
       }
     }
 
-    /* 漏れなく全星で発生する波紋エフェクト */
     function triggerMainScreenFlash(x, y, duration, mag) {
       const normMag = Math.max(-1.5, Math.min(6.5, mag));
       const brightness = (6.5 - normMag) / 8.0; 
@@ -1424,7 +1418,7 @@
             const pan = (pitchAxis - 0.5) * 1.6;
             scheduleInstrumentSound(freq, volume, currentTime, pan, 'M', noteDuration, true);
           } else {
-            // 3.5等星以上〜5等星超はクラシックピアノ音
+            // 3.5等星以上〜5等星超はオルゴール音
             const pan = (pitchAxis - 0.5) * 1.8;
             const pitchData = calculatePitch(star.mag, star.bv);
             scheduleInstrumentSound(pitchData.freq, volume, currentTime, pan, pitchData.spectralClass, noteDuration, false);
@@ -1434,7 +1428,6 @@
             triggerStarFlash(star.origIndex);
           }
 
-          // バーが通過した星に漏れなく波紋を発生させる
           const flashX = star.normX * windowWidth;
           const flashY = star.normY * windowHeight;
           triggerMainScreenFlash(flashX, flashY, noteDuration, star.mag);
