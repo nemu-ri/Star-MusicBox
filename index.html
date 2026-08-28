@@ -358,14 +358,18 @@
     }
 
     /* 等級(mag)からオクターブ倍率を取得 
-       3等星を基準 (1倍)。明るい星(mag < 3)はオクターブを下げ、暗い星(mag > 3)はオクターブを上げずにそのまま保持する */
+       3.5等星未満（明るい星）は基準オクターブまたは低音域へシフト
+       4等星以上（暗い星）は3等星の1オクターブ上（2倍）に設定 */
     function getOctaveFactor(mag) {
+      if (mag >= 3.5) {
+        return 2.0; // 4等星以上は3等星の1オクターブ上
+      }
       const octaveShift = Math.round(mag - 3.0);
-      const effectiveShift = Math.min(0, octaveShift); // 3等星より暗い場合はシフトしない
+      const effectiveShift = Math.min(0, octaveShift);
       return Math.pow(2, effectiveShift);
     }
 
-    /* スペクトル型（青:高音〜赤:低音）と等級（オクターブ）に基づく周波数計算 */
+    /* スペクトル型（青:高音〜赤:低音）と等級（オクターブ）に基づく周波数計算 (上限1700Hz) */
     function calculatePitch(mag, bv) {
       const spectralClass = getSpectralClass(bv);
       const spectralNoteMap = {
@@ -383,7 +387,9 @@
       const octaveFactor = getOctaveFactor(mag);
 
       let freq = baseFreq * octaveFactor;
-      while (freq > 3500) freq /= 2;
+      
+      // 上限を約1700Hzに抑える設定（1700Hzを超えそうな場合は1オクターブ下げる）
+      while (freq > 1700) freq /= 2;
       while (freq < 60)   freq *= 2;
 
       return { freq, spectralClass };
@@ -1426,9 +1432,9 @@
             const pan = (pitchAxis - 0.5) * 1.6;
             scheduleInstrumentSound(freq, 0.35, currentTime, pan, 'M', true);
           } else {
-            // 暗い星ほど音量を小さく調整（最低音量 0.02 で無音化を防ぐ）
-            const normMag = Math.max(-1.5, Math.min(8.5, star.mag));
-            const volume = Math.max(0.02, 0.20 - ((normMag - 1.0) / 7.5) * 0.18);
+            // 等級(mag)ごとに滑らかにボリュームを変化（1等星前後で最大0.28、6等星付近で最小0.03）
+            const normMag = Math.max(-1.5, Math.min(6.5, star.mag));
+            const volume = Math.max(0.03, 0.28 - ((normMag - 1.0) / 5.5) * 0.25);
             const pan = (pitchAxis - 0.5) * 1.8;
 
             const pitchData = calculatePitch(star.mag, star.bv);
