@@ -25,6 +25,17 @@
       line-height: 1.5; pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,0.8); 
     }
 
+    /* メイン画面でのバー交差エフェクト用オーバーレイCanvas */
+    #effect-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      pointer-events: none;
+      z-index: 12;
+    }
+
     /* 再生時に全面に表示するスクリーンショット背景 */
     #playback-bg {
       position: absolute;
@@ -216,6 +227,7 @@
     <div id="sensor-info">モード: 画面タップで方位固定・連動</div>
   </div>
 
+  <canvas id="effect-canvas"></canvas>
   <img id="playback-bg" src="" alt="再生背景">
   <div id="scan-bar"></div>
 
@@ -240,7 +252,7 @@
       <span>音色タイプ</span>
       <select id="timbre-select">
         <option value="kalimba">カリンバ (入眠用)</option>
-        <option value="piano">ピアノ</option>
+        <option value="piano" selected>クラシックピアノ</option>
         <option value="synth">シンセパッド</option>
       </select>
     </div>
@@ -295,6 +307,9 @@
     const scanBarEl = document.getElementById('scan-bar');
     const playbackBgEl = document.getElementById('playback-bg');
 
+    let effectCanvas, effectCtx;
+    let mainScreenFlashes = []; // メイン画面上の光演出（エフェクト）アニメーション管理用
+
     let isManualMode = false;
     let showConstellations = false;
     let realStarsData = [];
@@ -315,7 +330,7 @@
     let audioCtx = null;
     let masterFilter = null;
     let isPlayingMusic = false;
-    let currentTimbre = 'kalimba';
+    let currentTimbre = 'piano'; // デフォルトをピアノに変更
     const scanDuration = 30; // 30秒固定
     let playStartTime = 0;
     let currentPlayingId = null;
@@ -628,6 +643,11 @@
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
       renderer.setSize(width, height);
+
+      if (effectCanvas) {
+        effectCanvas.width = width;
+        effectCanvas.height = height;
+      }
     }
 
     function setupZoomControls() {
@@ -681,6 +701,11 @@
       renderer.setSize(initialWidth, initialHeight);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 3));
       document.body.appendChild(renderer.domElement);
+
+      effectCanvas = document.getElementById('effect-canvas');
+      effectCtx = effectCanvas.getContext('2d');
+      effectCanvas.width = initialWidth;
+      effectCanvas.height = initialHeight;
 
       orbitControls = new THREE.OrbitControls(camera, renderer.domElement);
       orbitControls.enableZoom = false;
@@ -999,7 +1024,7 @@
         
         masterFilter = audioCtx.createBiquadFilter();
         masterFilter.type = 'lowpass';
-        masterFilter.frequency.setValueAtTime(1800, audioCtx.currentTime);
+        masterFilter.frequency.setValueAtTime(2400, audioCtx.currentTime);
         masterFilter.connect(audioCtx.destination);
       }
       if (audioCtx.state === 'suspended') {
@@ -1007,8 +1032,78 @@
       }
     }
 
+    /* クラシックピアノ風のサウンド合成 */
+    function schedulePianoSound(freq, volume, startTime, pan = 0) {
+      if (!audioCtx) return;
+
+      const duration = 3.5;
+      const gainNode = audioCtx.createGain();
+
+      // パンの設定
+      let pannerNode = null;
+      if (audioCtx.createStereoPanner) {
+        pannerNode = audioCtx.createStereoPanner();
+        pannerNode.pan.setValueAtTime(Math.max(-0.9, Math.min(0.9, pan)), startTime);
+        gainNode.connect(pannerNode);
+        pannerNode.connect(masterFilter || audioCtx.destination);
+      } else {
+        gainNode.connect(masterFilter || audioCtx.destination);
+      }
+
+      // 1. 打鍵時のハンマーアタックノイズ（コン」という短い低音）
+      const attackOsc = audioCtx.createOscillator();
+      const attackGain = audioCtx.createGain();
+      attackOsc.type = 'triangle';
+      attackOsc.frequency.setValueAtTime(freq * 0.5, startTime);
+      attackOsc.frequency.exponentialRampToValueAtTime(30, startTime + 0.03);
+      attackGain.gain.setValueAtTime(volume * 0.25, startTime);
+      attackGain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.03);
+      attackOsc.connect(attackGain);
+      attackGain.connect(gainNode);
+      attackOsc.start(startTime);
+      attackOsc.stop(startTime + 0.04);
+
+      // 2. ピアノ弦の複雑な倍音構造（基音 + 複数の高調波）
+      const harmonics = [
+        { mult: 1.0,  vol: 1.0,   decay: 1.0 },   // 基音
+        { mult: 2.0,  vol: 0.5,   decay: 0.8 },   // 第2高調波
+        { mult: 3.0,  vol: 0.25,  decay: 0.6 },   // 第3高調波
+        { mult: 4.01, vol: 0.12,  decay: 0.4 },   // 第4高調波（非調和性を持たせるためわずかにずらす）
+        { mult: 5.02, vol: 0.06,  decay: 0.3 }    // 第5高調波
+      ];
+
+      harmonics.forEach(h => {
+        const osc = audioCtx.createOscillator();
+        const hGain = audioCtx.createGain();
+
+        // 澄んだアコースティック感のあるサイン波をベースに使用
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq * h.mult, startTime);
+
+        const hVol = volume * h.vol * 0.18;
+        const hDecay = duration * h.decay;
+
+        // ピアノ特有のエンベロープ（鋭い立ち上がり ➔ すばやい初期減衰 ➔ 長い余韻）
+        hGain.gain.setValueAtTime(0.0001, startTime);
+        hGain.gain.linearRampToValueAtTime(hVol, startTime + 0.008); 
+        hGain.gain.exponentialRampToValueAtTime(hVol * 0.3, startTime + 0.25);
+        hGain.gain.exponentialRampToValueAtTime(0.0001, startTime + hDecay);
+
+        osc.connect(hGain);
+        hGain.connect(gainNode);
+
+        osc.start(startTime);
+        osc.stop(startTime + hDecay);
+      });
+    }
+
     function scheduleStarSound(freq, volume, startTime, pan = 0, isBass = false) {
       if (!audioCtx) return;
+
+      if (currentTimbre === 'piano' && !isBass) {
+        schedulePianoSound(freq, volume, startTime, pan);
+        return;
+      }
 
       const osc = audioCtx.createOscillator();
       const gainNode = audioCtx.createGain();
@@ -1035,7 +1130,7 @@
         osc.start(startTime);
         osc.stop(startTime + duration);
       } else {
-        osc.type = (currentTimbre === 'piano') ? 'triangle' : 'sine';
+        osc.type = 'sine';
         const duration = (currentTimbre === 'synth') ? 3.5 : 2.2;
 
         gainNode.gain.setValueAtTime(0.0001, startTime);
@@ -1069,6 +1164,62 @@
       if (starIndex >= 0 && starIndex < flashArr.length) {
         flashArr[starIndex] = 1.0;
         starMesh.geometry.attributes.aFlash.needsUpdate = true;
+      }
+    }
+
+    /* メイン画面（3D AR空間）上での光演出・波紋トリガー */
+    function triggerMainScreenFlash(x, y) {
+      mainScreenFlashes.push({
+        x,
+        y,
+        radius: 4,
+        maxRadius: 40,
+        opacity: 1.0,
+        coreBrightness: 1.0
+      });
+    }
+
+    /* メイン画面のエフェクト描画更新 */
+    function updateAndDrawMainScreenFlashes() {
+      if (!effectCtx) return;
+      effectCtx.clearRect(0, 0, effectCanvas.width, effectCanvas.height);
+
+      if (mainScreenFlashes.length === 0) return;
+
+      for (let i = mainScreenFlashes.length - 1; i >= 0; i--) {
+        const flash = mainScreenFlashes[i];
+
+        effectCtx.save();
+
+        // 1. 中央の強力な発光（フラッシュ）
+        if (flash.coreBrightness > 0) {
+          effectCtx.beginPath();
+          effectCtx.arc(flash.x, flash.y, 8, 0, Math.PI * 2);
+          effectCtx.fillStyle = `rgba(255, 255, 255, ${flash.coreBrightness})`;
+          effectCtx.shadowColor = '#93c5fd';
+          effectCtx.shadowBlur = 20;
+          effectCtx.fill();
+        }
+
+        // 2. 外側に広がる光のリング（波紋）
+        effectCtx.beginPath();
+        effectCtx.arc(flash.x, flash.y, flash.radius, 0, Math.PI * 2);
+        effectCtx.strokeStyle = `rgba(186, 230, 253, ${flash.opacity})`;
+        effectCtx.lineWidth = 2.0;
+        effectCtx.shadowColor = '#60a5fa';
+        effectCtx.shadowBlur = 12;
+        effectCtx.stroke();
+
+        effectCtx.restore();
+
+        // アニメーション進行
+        flash.radius += 1.5;
+        flash.opacity -= 0.03;
+        flash.coreBrightness -= 0.06;
+
+        if (flash.opacity <= 0) {
+          mainScreenFlashes.splice(i, 1);
+        }
       }
     }
 
@@ -1114,7 +1265,6 @@
 
         ctx.save();
 
-        // 1. 中央の強力な発光・フラッシュ
         if (flash.coreBrightness > 0) {
           ctx.beginPath();
           ctx.arc(x, y, 4, 0, Math.PI * 2);
@@ -1124,7 +1274,6 @@
           ctx.fill();
         }
 
-        // 2. 広がる波紋リング演出
         ctx.beginPath();
         ctx.arc(x, y, flash.radius, 0, Math.PI * 2);
         ctx.strokeStyle = `rgba(186, 230, 253, ${flash.opacity})`;
@@ -1135,7 +1284,6 @@
 
         ctx.restore();
 
-        // アニメーション更新
         flash.radius += 0.8;
         flash.opacity -= 0.035;
         flash.coreBrightness -= 0.05;
@@ -1159,6 +1307,7 @@
       currentPlaybackList = [];
       playedStarIndices.clear();
       activeFlashes = [];
+      mainScreenFlashes = [];
 
       if (playbackBgEl) {
         playbackBgEl.style.display = 'none';
@@ -1197,6 +1346,7 @@
       currentPlayingId = id;
       playedStarIndices.clear();
       activeFlashes = [];
+      mainScreenFlashes = [];
       playStartTime = audioCtx.currentTime;
 
       currentPlaybackList = [...item.stars];
@@ -1233,12 +1383,12 @@
       const progress = (elapsedTime % scanDuration) / scanDuration;
 
       const isPortrait = window.innerHeight > window.innerWidth;
+      const windowWidth = window.innerWidth;
+      const windowHeight = window.innerHeight;
 
       if (isPortrait) {
-        const windowHeight = window.innerHeight;
         scanBarEl.style.top = `${progress * windowHeight}px`;
       } else {
-        const windowWidth = window.innerWidth;
         scanBarEl.style.left = `${progress * windowWidth}px`;
       }
 
@@ -1288,6 +1438,12 @@
           if (star.origIndex !== undefined) {
             triggerStarFlash(star.origIndex);
           }
+
+          // メイン画面のバーライン上の位置へ光演出を発生させる
+          const flashX = star.normX * windowWidth;
+          const flashY = star.normY * windowHeight;
+          triggerMainScreenFlash(flashX, flashY);
+
           if (currentPlayingId) {
             triggerThumbnailFlash(currentPlayingId, star.normX, star.normY);
           }
@@ -1299,6 +1455,7 @@
       requestAnimationFrame(animate);
 
       updateScanPlayback();
+      updateAndDrawMainScreenFlashes();
       updateAndDrawThumbnailFlashes();
 
       if (starMesh && starMesh.material && starMesh.material.uniforms && starMesh.material.uniforms.uFov) {
