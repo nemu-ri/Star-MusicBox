@@ -317,7 +317,6 @@
     let lastSoundTime = 0;
     let activeFlashes = [];
 
-    // Fナチュラルマイナースケール (F, G, Ab, Bb, C, Db, Eb) の基本ピッチ (Hz)
     const fNaturalMinorBase = [
       174.61, // F3
       196.00, // G3
@@ -382,10 +381,8 @@
       return { freq, spectralClass };
     }
 
-    /* 星の明るさ(等級)からMIDIノートの長さ(duration)を動的計算 */
     function calculateNoteDuration(mag) {
       const normMag = Math.max(-1.5, Math.min(6.5, mag));
-      // 1等星などの明るい星は約4.2秒、6等星などの暗い星は約0.8秒
       const t = (6.5 - normMag) / 8.0; 
       return 0.8 + Math.pow(t, 1.8) * 3.4;
     }
@@ -1050,7 +1047,6 @@
         
         masterFilter = audioCtx.createBiquadFilter();
         masterFilter.type = 'lowpass';
-        // ハウリング・耳障りな高音域の重なりを抑えるためカットオフを1500Hzに調整
         masterFilter.frequency.setValueAtTime(1500, audioCtx.currentTime);
         masterFilter.connect(audioCtx.destination);
       }
@@ -1059,7 +1055,6 @@
       }
     }
 
-    /* 各色（スペクトル型）と星の明るさに応じるノート発音処理 */
     function scheduleInstrumentSound(freq, volume, startTime, pan, spectralClass, duration, isBass = false) {
       if (!audioCtx) return;
 
@@ -1074,7 +1069,6 @@
         gainNode.connect(masterFilter || audioCtx.destination);
       }
 
-      // 低音域（ブライト星/ベース音）の音源生成
       if (isBass) {
         const osc = audioCtx.createOscillator();
         osc.type = 'sine';
@@ -1089,9 +1083,7 @@
         return;
       }
 
-      // 色 (スペクトル型) ごとの音色合成
       if (spectralClass === 'O' || spectralClass === 'B') {
-        // 【青・青白星】 カリンバ / クリスタルライヤー
         const osc = audioCtx.createOscillator();
         const osc2 = audioCtx.createOscillator();
         osc.type = 'sine';
@@ -1112,7 +1104,6 @@
         osc2.stop(startTime + duration);
 
       } else if (spectralClass === 'A' || spectralClass === 'F') {
-        // 【白・黄白星】 クラシックピアノ
         const osc = audioCtx.createOscillator();
         const osc2 = audioCtx.createOscillator();
         osc.type = 'sine';
@@ -1134,7 +1125,6 @@
         osc2.stop(startTime + duration);
 
       } else if (spectralClass === 'G' || spectralClass === 'K') {
-        // 【黄・オレンジ星】 アコースティックギター / ハープ
         const osc = audioCtx.createOscillator();
         osc.type = 'triangle';
         osc.frequency.setValueAtTime(freq, startTime);
@@ -1148,7 +1138,6 @@
         osc.stop(startTime + duration);
 
       } else {
-        // 【赤星 (M型)】 温かいシンセパッド / ヴァイブ
         const osc = audioCtx.createOscillator();
         osc.type = 'sine';
         osc.frequency.setValueAtTime(freq, startTime);
@@ -1172,69 +1161,89 @@
       }
     }
 
+    /* メイン画面用のマルチウェーブ（波紋干渉）発生処理 */
     function triggerMainScreenFlash(x, y) {
       mainScreenFlashes.push({
         x,
         y,
-        radius: 4,
-        maxRadius: 40,
+        radius: 2,
+        maxRadius: 28,      // 波紋の最大半径
+        ringCount: 3,       // 同心円の数
+        ringSpacing: 6,     // 同心円の間隔
         opacity: 1.0,
         coreBrightness: 1.0
       });
     }
 
+    /* メイン画面の波紋更新描画（加算合成による波動の干渉を表現） */
     function updateAndDrawMainScreenFlashes() {
       if (!effectCtx) return;
       effectCtx.clearRect(0, 0, effectCanvas.width, effectCanvas.height);
 
       if (mainScreenFlashes.length === 0) return;
 
+      effectCtx.save();
+      // 波と波が重なった部分を明るく発光させる干渉（アルファ加算ブレンド）効果
+      effectCtx.globalCompositeOperation = 'lighter';
+
       for (let i = mainScreenFlashes.length - 1; i >= 0; i--) {
         const flash = mainScreenFlashes[i];
 
-        effectCtx.save();
-
+        // 中心コアの点滅
         if (flash.coreBrightness > 0) {
           effectCtx.beginPath();
-          effectCtx.arc(flash.x, flash.y, 8, 0, Math.PI * 2);
+          effectCtx.arc(flash.x, flash.y, 4, 0, Math.PI * 2);
           effectCtx.fillStyle = `rgba(255, 255, 255, ${flash.coreBrightness})`;
           effectCtx.shadowColor = '#93c5fd';
-          effectCtx.shadowBlur = 20;
+          effectCtx.shadowBlur = 12;
           effectCtx.fill();
         }
 
-        effectCtx.beginPath();
-        effectCtx.arc(flash.x, flash.y, flash.radius, 0, Math.PI * 2);
-        effectCtx.strokeStyle = `rgba(186, 230, 253, ${flash.opacity})`;
-        effectCtx.lineWidth = 2.0;
-        effectCtx.shadowColor = '#60a5fa';
-        effectCtx.shadowBlur = 12;
-        effectCtx.stroke();
+        // 複数の同心波紋を描画して、波の広がりの干渉を演出
+        for (let r = 0; r < flash.ringCount; r++) {
+          const currentRadius = flash.radius - (r * flash.ringSpacing);
+          if (currentRadius > 0) {
+            const ringAlpha = flash.opacity * Math.pow(1 - (currentRadius / flash.maxRadius), 1.2) * (1 - r * 0.25);
+            if (ringAlpha > 0) {
+              effectCtx.beginPath();
+              effectCtx.arc(flash.x, flash.y, currentRadius, 0, Math.PI * 2);
+              effectCtx.strokeStyle = `rgba(147, 197, 253, ${ringAlpha})`;
+              effectCtx.lineWidth = Math.max(0.5, 1.8 - r * 0.4);
+              effectCtx.shadowColor = '#60a5fa';
+              effectCtx.shadowBlur = 8;
+              effectCtx.stroke();
+            }
+          }
+        }
 
-        effectCtx.restore();
+        flash.radius += 0.85; 
+        flash.opacity -= 0.022;
+        flash.coreBrightness -= 0.05;
 
-        flash.radius += 1.5;
-        flash.opacity -= 0.03;
-        flash.coreBrightness -= 0.06;
-
-        if (flash.opacity <= 0) {
+        if (flash.opacity <= 0 || flash.radius >= flash.maxRadius) {
           mainScreenFlashes.splice(i, 1);
         }
       }
+
+      effectCtx.restore();
     }
 
+    /* サムネイル表示用の小さな波紋発生処理 */
     function triggerThumbnailFlash(itemId, normX, normY) {
       activeFlashes.push({
         itemId,
         normX,
         normY,
-        radius: 2,
-        maxRadius: 22,
+        radius: 1,
+        maxRadius: 15,
+        ringCount: 2,
+        ringSpacing: 4,
         opacity: 1.0,
         coreBrightness: 1.0
       });
     }
 
+    /* サムネイル画面の波紋更新描画 */
     function updateAndDrawThumbnailFlashes() {
       if (activeFlashes.length === 0) return;
 
@@ -1263,31 +1272,40 @@
         const y = flash.normY * canvas.height;
 
         ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
 
         if (flash.coreBrightness > 0) {
           ctx.beginPath();
-          ctx.arc(x, y, 4, 0, Math.PI * 2);
+          ctx.arc(x, y, 2.5, 0, Math.PI * 2);
           ctx.fillStyle = `rgba(255, 255, 255, ${flash.coreBrightness})`;
           ctx.shadowColor = '#93c5fd';
-          ctx.shadowBlur = 12;
+          ctx.shadowBlur = 8;
           ctx.fill();
         }
 
-        ctx.beginPath();
-        ctx.arc(x, y, flash.radius, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(186, 230, 253, ${flash.opacity})`;
-        ctx.lineWidth = 1.5;
-        ctx.shadowColor = '#60a5fa';
-        ctx.shadowBlur = 8;
-        ctx.stroke();
+        for (let r = 0; r < flash.ringCount; r++) {
+          const currentRadius = flash.radius - (r * flash.ringSpacing);
+          if (currentRadius > 0) {
+            const ringAlpha = flash.opacity * (1 - (currentRadius / flash.maxRadius)) * (1 - r * 0.3);
+            if (ringAlpha > 0) {
+              ctx.beginPath();
+              ctx.arc(x, y, currentRadius, 0, Math.PI * 2);
+              ctx.strokeStyle = `rgba(147, 197, 253, ${ringAlpha})`;
+              ctx.lineWidth = 1.0;
+              ctx.shadowColor = '#60a5fa';
+              ctx.shadowBlur = 6;
+              ctx.stroke();
+            }
+          }
+        }
 
         ctx.restore();
 
-        flash.radius += 0.8;
-        flash.opacity -= 0.035;
-        flash.coreBrightness -= 0.05;
+        flash.radius += 0.55;
+        flash.opacity -= 0.03;
+        flash.coreBrightness -= 0.06;
 
-        if (flash.opacity <= 0) {
+        if (flash.opacity <= 0 || flash.radius >= flash.maxRadius) {
           activeFlashes.splice(i, 1);
         }
       }
