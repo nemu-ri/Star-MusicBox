@@ -307,7 +307,7 @@
     let audioCtx = null;
     let masterFilter = null;
     let isPlayingMusic = false;
-    const scanDuration = 60; // 60秒周期へ変更
+    const scanDuration = 60; // 60秒周期
     let playStartTime = 0;
     let currentPlayingId = null;
     let savedLibrary = [];
@@ -358,31 +358,30 @@
     }
 
     /* 等級(mag)からオクターブ倍率を取得 
-       3等星を基準 (1倍)。明るい星(mag < 3)はオクターブ下げ、暗い星(mag > 3)はオクターブ上げる */
+       3等星を基準 (1倍)。明るい星(mag < 3)はオクターブを下げ、暗い星(mag > 3)はオクターブを上げずにそのまま保持する */
     function getOctaveFactor(mag) {
       const octaveShift = Math.round(mag - 3.0);
-      return Math.pow(2, octaveShift);
+      const effectiveShift = Math.min(0, octaveShift); // 3等星より暗い場合はシフトしない
+      return Math.pow(2, effectiveShift);
     }
 
     /* スペクトル型（青:高音〜赤:低音）と等級（オクターブ）に基づく周波数計算 */
     function calculatePitch(mag, bv) {
       const spectralClass = getSpectralClass(bv);
-      // O/B (青) ほど高く、M (赤) に近いほど低くなる音階インデックス割り当て
       const spectralNoteMap = {
-        'O': 6, // Eb (高)
+        'O': 6, // Eb
         'B': 5, // Db
         'A': 4, // C
         'F': 3, // Bb
         'G': 2, // Ab
         'K': 1, // G
-        'M': 0  // F (低)
+        'M': 0  // F
       };
 
       const noteIdx = spectralNoteMap[spectralClass] !== undefined ? spectralNoteMap[spectralClass] : 3;
       const baseFreq = fNaturalMinorBase[noteIdx];
       const octaveFactor = getOctaveFactor(mag);
 
-      // 可聴域内に収まるよう周波数を制限
       let freq = baseFreq * octaveFactor;
       while (freq > 3500) freq /= 2;
       while (freq < 60)   freq *= 2;
@@ -1050,7 +1049,7 @@
         
         masterFilter = audioCtx.createBiquadFilter();
         masterFilter.type = 'lowpass';
-        masterFilter.frequency.setValueAtTime(2000, audioCtx.currentTime); // よりマイルドな入眠向けフィルタ
+        masterFilter.frequency.setValueAtTime(2000, audioCtx.currentTime);
         masterFilter.connect(audioCtx.destination);
       }
       if (audioCtx.state === 'suspended') {
@@ -1157,7 +1156,7 @@
 
         const duration = 4.0;
         gainNode.gain.setValueAtTime(0.0001, startTime);
-        gainNode.gain.linearRampToValueAtTime(volume * 0.22, startTime + 0.15); // やわらかな立ち上がり
+        gainNode.gain.linearRampToValueAtTime(volume * 0.22, startTime + 0.15);
         gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
         osc.connect(gainNode);
@@ -1427,11 +1426,11 @@
             const pan = (pitchAxis - 0.5) * 1.6;
             scheduleInstrumentSound(freq, 0.35, currentTime, pan, 'M', true);
           } else {
+            // 暗い星ほど音量を小さく調整（最低音量 0.02 で無音化を防ぐ）
             const normMag = Math.max(-1.5, Math.min(8.5, star.mag));
-            const volume = Math.max(0.03, 0.25 - ((normMag + 1.5) / 10.0) * 0.22);
+            const volume = Math.max(0.02, 0.20 - ((normMag - 1.0) / 7.5) * 0.18);
             const pan = (pitchAxis - 0.5) * 1.8;
 
-            // Fナチュラルマイナースケール & 3等星基準オクターブ周波数・色別楽器での音響生成
             const pitchData = calculatePitch(star.mag, star.bv);
             scheduleInstrumentSound(pitchData.freq, volume, currentTime, pan, pitchData.spectralClass, false);
           }
