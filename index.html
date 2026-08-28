@@ -317,6 +317,7 @@
     let lastSoundTime = 0;
     let activeFlashes = [];
 
+    // Fナチュラルマイナースケール (F, G, Ab, Bb, C, Db, Eb)
     const fNaturalMinorBase = [
       174.61, // F3
       196.00, // G3
@@ -381,11 +382,19 @@
       return { freq, spectralClass };
     }
 
-    // 星の明るさに応じてノートの長さを調整（最長1.2秒程度に抑えて不快な残響・ハウリングを防止）
+    /* =========================================================
+       1. 等級（明るさ）に応じたノート長（音響時間）の計算
+       明るい星（magが小さい/負）ほど長くゆったり残響を残す
+       ========================================================= */
     function calculateNoteDuration(mag) {
+      // mag: -1.5 (超明るい) 〜 6.5 (暗い)
       const normMag = Math.max(-1.5, Math.min(6.5, mag));
-      const t = (6.5 - normMag) / 8.0; 
-      return 0.15 + Math.pow(t, 1.8) * 1.05;
+      
+      // 明るさの割合 (1.0 = 一番明るい, 0.0 = 暗い)
+      const brightness = (6.5 - normMag) / 8.0; 
+      
+      // 暗い星は 0.6秒程度、明るい星は最大 5.5秒程度の長い余韻へ
+      return 0.6 + Math.pow(brightness, 2.0) * 4.9;
     }
 
     function clearGroup(group) {
@@ -1046,9 +1055,10 @@
       if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         
+        // 水中のようなマイルドな残響・響きを演出するローパスフィルター
         masterFilter = audioCtx.createBiquadFilter();
         masterFilter.type = 'lowpass';
-        masterFilter.frequency.setValueAtTime(1500, audioCtx.currentTime);
+        masterFilter.frequency.setValueAtTime(1200, audioCtx.currentTime);
         masterFilter.connect(audioCtx.destination);
       }
       if (audioCtx.state === 'suspended') {
@@ -1056,12 +1066,16 @@
       }
     }
 
-    // 音の発音・減衰タイミングを大幅に整理してハウリングや余剰な残響を抑える
+    /* =========================================================
+       2. 入眠・水中の波をイメージした音源生成処理
+       ========================================================= */
     function scheduleInstrumentSound(freq, volume, startTime, pan, spectralClass, duration, isBass = false) {
       if (!audioCtx) return;
 
       const gainNode = audioCtx.createGain();
       let pannerNode = null;
+
+      // パン（左右の音の広がり）の設定
       if (audioCtx.createStereoPanner) {
         pannerNode = audioCtx.createStereoPanner();
         pannerNode.pan.setValueAtTime(Math.max(-0.85, Math.min(0.85, pan)), startTime);
@@ -1071,86 +1085,79 @@
         gainNode.connect(masterFilter || audioCtx.destination);
       }
 
+      // --- Bass（低音・土台の波の響き） ---
       if (isBass) {
         const osc = audioCtx.createOscillator();
-        osc.type = 'sine';
-        const bassDuration = Math.min(duration, 1.5); // 低音も伸びすぎないよう制御
+        osc.type = 'sine'; // 柔らかな丸い低音
+
+        const bassDuration = Math.max(duration, 4.5); // ゆったり長い余韻
+        
+        // なだらかな包み込むようなアタック＆リリース
         gainNode.gain.setValueAtTime(0.0001, startTime);
-        gainNode.gain.linearRampToValueAtTime(0.15, startTime + 0.05);
+        gainNode.gain.linearRampToValueAtTime(0.15, startTime + 1.2); 
         gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + bassDuration);
 
+        osc.frequency.setValueAtTime(freq, startTime);
         osc.connect(gainNode);
         osc.start(startTime);
         osc.stop(startTime + bassDuration);
         return;
       }
 
+      // --- 高域/低域に応じた残響・刺激抑止パラメータの計算 ---
+      // 高い音（freq > 600Hz等）ほど残響を抑え、アタックを優しくする
+      const isHighPitch = freq > 600;
+      const highFrequencyFactor = Math.min(1.0, Math.max(0.0, (freq - 400) / 1200)); 
+      
+      // 高音域・暗い星は余韻をカットして耳に触らないように調整
+      const effectiveDuration = isHighPitch 
+        ? duration * (1.0 - highFrequencyFactor * 0.5) 
+        : duration;
+
+      // アタック（音の立ち上がり時間）：高音ほど丸く優しく入る
+      const attackTime = isHighPitch ? 0.08 + highFrequencyFactor * 0.1 : 0.03;
+      
+      // 音量補正：高音域の音量は抑えめに
+      const adjustedVolume = volume * (1.0 - highFrequencyFactor * 0.4);
+
+      // --- 星のスペクトル（色）ごとの波・水滴風シンセ音 ---
+      const osc1 = audioCtx.createOscillator();
+      const osc2 = audioCtx.createOscillator();
+
+      // 波のような透明感を出すためサイン波を基本に使用
+      osc1.type = 'sine';
+      
       if (spectralClass === 'O' || spectralClass === 'B') {
-        const osc = audioCtx.createOscillator();
-        const osc2 = audioCtx.createOscillator();
-        osc.type = 'sine';
-        osc2.type = 'triangle';
-        
-        osc.frequency.setValueAtTime(freq, startTime);
-        osc2.frequency.setValueAtTime(freq * 2.001, startTime);
-
-        gainNode.gain.setValueAtTime(0.0001, startTime);
-        gainNode.gain.linearRampToValueAtTime(volume * 0.15, startTime + 0.008);
-        gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
-
-        osc.connect(gainNode);
-        osc2.connect(gainNode);
-        osc.start(startTime);
-        osc2.start(startTime);
-        osc.stop(startTime + duration);
-        osc2.stop(startTime + duration);
-
-      } else if (spectralClass === 'A' || spectralClass === 'F') {
-        const osc = audioCtx.createOscillator();
-        const osc2 = audioCtx.createOscillator();
-        osc.type = 'sine';
+        // 青・白（高音域・涼しげな水中トーン）：わずかなデチューンで波の揺らぎ表現
         osc2.type = 'sine';
-
-        osc.frequency.setValueAtTime(freq, startTime);
+        osc1.frequency.setValueAtTime(freq, startTime);
+        osc2.frequency.setValueAtTime(freq * 1.002, startTime); // 微小なピッチズレで波の干渉を起こす
+      } else if (spectralClass === 'A' || spectralClass === 'F') {
+        // 緑・黄（温かみのある水滴・静かな波）：オクターブ上の微小な重ね
+        osc2.type = 'sine';
+        osc1.frequency.setValueAtTime(freq, startTime);
         osc2.frequency.setValueAtTime(freq * 2.0, startTime);
-
-        gainNode.gain.setValueAtTime(0.0001, startTime);
-        gainNode.gain.linearRampToValueAtTime(volume * 0.16, startTime + 0.01);
-        gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
-
-        osc.connect(gainNode);
-        osc2.connect(gainNode);
-        osc.start(startTime);
-        osc2.start(startTime);
-        osc.stop(startTime + duration);
-        osc2.stop(startTime + duration);
-
-      } else if (spectralClass === 'G' || spectralClass === 'K') {
-        const osc = audioCtx.createOscillator();
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(freq, startTime);
-
-        gainNode.gain.setValueAtTime(0.0001, startTime);
-        gainNode.gain.linearRampToValueAtTime(volume * 0.14, startTime + 0.015);
-        gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
-
-        osc.connect(gainNode);
-        osc.start(startTime);
-        osc.stop(startTime + duration);
-
       } else {
-        const osc = audioCtx.createOscillator();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(freq, startTime);
-
-        gainNode.gain.setValueAtTime(0.0001, startTime);
-        gainNode.gain.linearRampToValueAtTime(volume * 0.15, startTime + 0.02);
-        gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
-
-        osc.connect(gainNode);
-        osc.start(startTime);
-        osc.stop(startTime + duration);
+        // 赤・オレンジ（深海・深い波の響き）：単一の深いサイン波
+        osc2.type = 'sine';
+        osc1.frequency.setValueAtTime(freq, startTime);
+        osc2.frequency.setValueAtTime(freq * 0.5, startTime); // 低域を添える
       }
+
+      // エンベロープ（音量変化）設計：水中を漂うようなエンベロープ
+      gainNode.gain.setValueAtTime(0.0001, startTime);
+      // アタック（ソフトに入り込む）
+      gainNode.gain.linearRampToValueAtTime(adjustedVolume * 0.18, startTime + attackTime);
+      // サステイン〜ディケイ（優しく減衰）
+      gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + effectiveDuration);
+
+      osc1.connect(gainNode);
+      osc2.connect(gainNode);
+
+      osc1.start(startTime);
+      osc2.start(startTime);
+      osc1.stop(startTime + effectiveDuration);
+      osc2.stop(startTime + effectiveDuration);
     }
 
     function triggerStarFlash(starIndex) {
