@@ -381,7 +381,7 @@
       return { freq, spectralClass };
     }
 
-    /* 最短1.0秒 〜 最大8.5秒に拡張 */
+    // 暗い星: 最短1.0秒 〜 明るい星: 最大8.5秒に調整
     function calculateNoteDuration(mag) {
       const normMag = Math.max(-1.5, Math.min(6.5, mag));
       const brightness = (6.5 - normMag) / 8.0; 
@@ -1053,7 +1053,7 @@
         
         masterFilter = audioCtx.createBiquadFilter();
         masterFilter.type = 'lowpass';
-        masterFilter.frequency.setValueAtTime(2200, audioCtx.currentTime); // シンセ用に少し明るく拡張
+        masterFilter.frequency.setValueAtTime(1500, audioCtx.currentTime);
         masterFilter.connect(audioCtx.destination);
       }
       if (audioCtx.state === 'suspended') {
@@ -1061,7 +1061,7 @@
       }
     }
 
-    /* シンセサイザー音源処理 */
+    /* 3.5等星未満はベース、3.5等以上はカリンバ音源 */
     function scheduleInstrumentSound(freq, volume, startTime, pan, spectralClass, duration, isBass = false) {
       if (!audioCtx) return;
 
@@ -1078,63 +1078,48 @@
       }
 
       if (isBass) {
-        // --- シンセベース音（3.5等星未満の明るい星） ---
+        // --- ベース音（3.5等星未満の明るい星） ---
         const osc = audioCtx.createOscillator();
-        osc.type = 'sawtooth'; // 鋸歯状波でシンセベースの深みを作成
-
-        const filter = audioCtx.createBiquadFilter();
-        filter.type = 'lowpass';
-        filter.frequency.setValueAtTime(350, startTime);
-        filter.Q.setValueAtTime(3, startTime);
+        osc.type = 'sine';
 
         const bassDuration = Math.max(duration, 4.0);
         
         gainNode.gain.setValueAtTime(0.0001, startTime);
-        gainNode.gain.linearRampToValueAtTime(volume * 0.8, startTime + 0.08); 
+        gainNode.gain.linearRampToValueAtTime(volume * 0.9, startTime + 0.15); 
         gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + bassDuration);
 
         osc.frequency.setValueAtTime(freq, startTime);
-        osc.connect(filter);
-        filter.connect(gainNode);
-
+        osc.connect(gainNode);
         osc.start(startTime);
         osc.stop(startTime + bassDuration);
         return;
       }
 
-      // --- シンセパッド／リード音（3.5等星以上の星） ---
-      const attackTime = 0.04; 
-      const decayTime = Math.min(0.6, duration * 0.4);
-      const sustainLevel = volume * 0.4;
+      // --- カリンバ（Kalimba）シンセ（3.5等星以上の星） ---
+      const attackTime = 0.002; 
 
+      // 1. 基音（サイン波：丸みのあるポコッという音響）
       const osc1 = audioCtx.createOscillator();
-      const osc2 = audioCtx.createOscillator();
-
-      osc1.type = 'sawtooth'; // シンセらしい豊かな倍音
-      osc2.type = 'triangle'; // まろやかな厚みを加える
-
-      // わずかなデチューン（音を揺らして幻想的な広がりを生む）
+      osc1.type = 'sine';
       osc1.frequency.setValueAtTime(freq, startTime);
-      osc2.frequency.setValueAtTime(freq * 1.003, startTime);
 
-      // ローパスフィルターでシンセ特有のマイルドで幻想的なトーンを作る
-      const synthFilter = audioCtx.createBiquadFilter();
-      synthFilter.type = 'lowpass';
-      synthFilter.frequency.setValueAtTime(2800, startTime);
-      synthFilter.frequency.exponentialRampToValueAtTime(800, startTime + duration);
+      // 2. カリンバ特有の金属的な高次倍音（非整倍数：約5.42倍）
+      const osc2 = audioCtx.createOscillator();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(freq * 5.42, startTime);
 
       const osc2Gain = audioCtx.createGain();
-      osc2Gain.gain.setValueAtTime(0.4, startTime);
+      // 倍音はアタック直後に急速に減衰させる
+      osc2Gain.gain.setValueAtTime(0.35 * volume, startTime);
+      osc2Gain.gain.exponentialRampToValueAtTime(0.0001, startTime + Math.min(0.12, duration * 0.15));
 
-      osc1.connect(synthFilter);
+      osc1.connect(gainNode);
       osc2.connect(osc2Gain);
-      osc2Gain.connect(synthFilter);
-      synthFilter.connect(gainNode);
+      osc2Gain.connect(gainNode);
 
-      // ADSRエンベロープ（緩やかなアタックと減衰）
+      // メインエンベロープ（自然な指弾き感と長い減衰）
       gainNode.gain.setValueAtTime(0.0001, startTime);
-      gainNode.gain.linearRampToValueAtTime(volume * 0.7, startTime + attackTime);
-      gainNode.gain.exponentialRampToValueAtTime(Math.max(0.0001, sustainLevel), startTime + attackTime + decayTime);
+      gainNode.gain.linearRampToValueAtTime(volume, startTime + attackTime);
       gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
       osc1.start(startTime);
@@ -1435,6 +1420,7 @@
             const pan = (pitchAxis - 0.5) * 1.6;
             scheduleInstrumentSound(freq, volume, currentTime, pan, 'M', noteDuration, true);
           } else {
+            // カリンバ音源で発音
             const pan = (pitchAxis - 0.5) * 1.8;
             const pitchData = calculatePitch(star.mag, star.bv);
             scheduleInstrumentSound(pitchData.freq, volume, currentTime, pan, pitchData.spectralClass, noteDuration, false);
