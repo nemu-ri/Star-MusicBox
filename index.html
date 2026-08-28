@@ -381,10 +381,11 @@
       return { freq, spectralClass };
     }
 
+    // 星の明るさに応じてノートの長さを調整（最長1.2秒程度に抑えて不快な残響・ハウリングを防止）
     function calculateNoteDuration(mag) {
       const normMag = Math.max(-1.5, Math.min(6.5, mag));
       const t = (6.5 - normMag) / 8.0; 
-      return 0.8 + Math.pow(t, 1.8) * 3.4;
+      return 0.15 + Math.pow(t, 1.8) * 1.05;
     }
 
     function clearGroup(group) {
@@ -1055,6 +1056,7 @@
       }
     }
 
+    // 音の発音・減衰タイミングを大幅に整理してハウリングや余剰な残響を抑える
     function scheduleInstrumentSound(freq, volume, startTime, pan, spectralClass, duration, isBass = false) {
       if (!audioCtx) return;
 
@@ -1072,9 +1074,9 @@
       if (isBass) {
         const osc = audioCtx.createOscillator();
         osc.type = 'sine';
-        const bassDuration = Math.max(duration, 3.5);
+        const bassDuration = Math.min(duration, 1.5); // 低音も伸びすぎないよう制御
         gainNode.gain.setValueAtTime(0.0001, startTime);
-        gainNode.gain.linearRampToValueAtTime(0.18, startTime + 0.6);
+        gainNode.gain.linearRampToValueAtTime(0.15, startTime + 0.05);
         gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + bassDuration);
 
         osc.connect(gainNode);
@@ -1093,7 +1095,7 @@
         osc2.frequency.setValueAtTime(freq * 2.001, startTime);
 
         gainNode.gain.setValueAtTime(0.0001, startTime);
-        gainNode.gain.linearRampToValueAtTime(volume * 0.18, startTime + 0.012);
+        gainNode.gain.linearRampToValueAtTime(volume * 0.15, startTime + 0.008);
         gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
         osc.connect(gainNode);
@@ -1113,8 +1115,7 @@
         osc2.frequency.setValueAtTime(freq * 2.0, startTime);
 
         gainNode.gain.setValueAtTime(0.0001, startTime);
-        gainNode.gain.linearRampToValueAtTime(volume * 0.20, startTime + 0.015);
-        gainNode.gain.exponentialRampToValueAtTime(Math.max(0.0001, volume * 0.05), startTime + Math.min(0.3, duration * 0.25));
+        gainNode.gain.linearRampToValueAtTime(volume * 0.16, startTime + 0.01);
         gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
         osc.connect(gainNode);
@@ -1130,7 +1131,7 @@
         osc.frequency.setValueAtTime(freq, startTime);
 
         gainNode.gain.setValueAtTime(0.0001, startTime);
-        gainNode.gain.linearRampToValueAtTime(volume * 0.16, startTime + 0.02);
+        gainNode.gain.linearRampToValueAtTime(volume * 0.14, startTime + 0.015);
         gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
         osc.connect(gainNode);
@@ -1143,7 +1144,7 @@
         osc.frequency.setValueAtTime(freq, startTime);
 
         gainNode.gain.setValueAtTime(0.0001, startTime);
-        gainNode.gain.linearRampToValueAtTime(volume * 0.18, startTime + 0.12);
+        gainNode.gain.linearRampToValueAtTime(volume * 0.15, startTime + 0.02);
         gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
         osc.connect(gainNode);
