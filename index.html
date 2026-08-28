@@ -25,7 +25,6 @@
       line-height: 1.5; pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,0.8); 
     }
 
-    /* メイン画面でのバー交差エフェクト用オーバーレイCanvas */
     #effect-canvas {
       position: absolute;
       top: 0;
@@ -36,7 +35,6 @@
       z-index: 12;
     }
 
-    /* 再生時に全面に表示するスクリーンショット背景 */
     #playback-bg {
       position: absolute;
       top: 0;
@@ -50,7 +48,6 @@
       pointer-events: none;
     }
 
-    /* 演奏中に動く洗練された細身のスキャンバー */
     #scan-bar {
       position: absolute;
       z-index: 10;
@@ -59,7 +56,6 @@
       box-shadow: 0 0 8px rgba(192, 224, 255, 0.9), 0 0 15px rgba(120, 180, 255, 0.6);
     }
 
-    /* 縦移動（横バー：太さ1px） */
     #scan-bar.horizontal-bar {
       left: 0;
       width: 100%;
@@ -74,7 +70,6 @@
       );
     }
 
-    /* 横移動（縦バー：太さ1px） */
     #scan-bar.vertical-bar {
       top: 0;
       height: 100%;
@@ -115,7 +110,6 @@
       box-shadow: 0 2px 6px rgba(0,0,0,0.5);
     }
 
-    /* PC用デフォルトサイドバー */
     #sidebar {
       position: absolute; top: 0; right: 0; width: 320px; height: 100%;
       background: rgba(10, 15, 30, 0.95); backdrop-filter: blur(12px);
@@ -127,7 +121,6 @@
     }
     #sidebar.open { display: flex; opacity: 1; transform: translateX(0); }
 
-    /* スマホ用設定サイドバー切り替え */
     @media (max-width: 768px) {
       #sidebar {
         width: 100%;
@@ -168,12 +161,6 @@
     .city-item:last-child { border-bottom: none; }
     .city-item:hover { background: rgba(255,255,255,0.15); }
     .city-item.active { background: rgba(37, 99, 235, 0.4); color: #93c5fd; font-weight: bold; }
-    
-    select, input[type="range"] {
-      background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3);
-      color: white; padding: 4px 8px; border-radius: 4px; outline: none;
-    }
-    select option { background: #0a0f1e; color: white; }
 
     .library-item {
       background: rgba(255,255,255,0.08); border-radius: 8px; padding: 12px;
@@ -199,7 +186,6 @@
     }
     .lib-btn.delete-btn:hover { background: rgba(239, 68, 68, 0.4); border-color: #ef4444; }
 
-    /* サムネイルのコンテナ・画像のアスペクト比自動維持設定 */
     .thumb-container {
       position: relative; width: 100%; height: auto; min-height: 100px; max-height: 400px;
       border-radius: 6px; overflow: hidden; background: #000;
@@ -246,15 +232,6 @@
   <div id="sidebar">
     <div class="sidebar-header">
       <span class="material-symbols-outlined">settings</span> 設定
-    </div>
-    
-    <div class="setting-item">
-      <span>音色タイプ</span>
-      <select id="timbre-select">
-        <option value="kalimba">カリンバ (入眠用)</option>
-        <option value="piano" selected>クラシックピアノ</option>
-        <option value="synth">シンセパッド</option>
-      </select>
     </div>
 
     <div class="setting-item">
@@ -308,7 +285,7 @@
     const playbackBgEl = document.getElementById('playback-bg');
 
     let effectCanvas, effectCtx;
-    let mainScreenFlashes = []; // メイン画面上の光演出（エフェクト）アニメーション管理用
+    let mainScreenFlashes = [];
 
     let isManualMode = false;
     let showConstellations = false;
@@ -330,8 +307,7 @@
     let audioCtx = null;
     let masterFilter = null;
     let isPlayingMusic = false;
-    let currentTimbre = 'piano'; // デフォルトをピアノに変更
-    const scanDuration = 30; // 30秒固定
+    const scanDuration = 60; // 60秒周期へ変更
     let playStartTime = 0;
     let currentPlayingId = null;
     let savedLibrary = [];
@@ -339,12 +315,18 @@
     let currentPlaybackList = [];
     let playedStarIndices = new Set();
     let lastSoundTime = 0;
-    let activeFlashes = []; // サムネイル上の光演出アニメーション管理用
+    let activeFlashes = [];
 
-    const fPentatonicScale = [
-      174.61, 196.00, 220.00, 261.63, 293.66,
-      349.23, 392.00, 440.00, 523.25, 587.33,
-      698.46, 783.99, 880.00, 1046.50, 1174.66
+    // Fナチュラルマイナースケール (F, G, Ab, Bb, C, Db, Eb) の基本ピッチ (Hz)
+    // 基準オクターブ (Central Octave / 3等星基準)
+    const fNaturalMinorBase = [
+      174.61, // F3
+      196.00, // G3
+      207.65, // Ab3
+      233.08, // Bb3
+      261.63, // C4
+      277.18, // Db4
+      311.13  // Eb4
     ];
 
     const bassScale = [43.65, 65.41, 87.31, 130.81];
@@ -363,6 +345,50 @@
       { name: "シドニー", lat: -33.8688, lon: 151.2093 },
       { name: "ホノルル", lat: 21.3069, lon: -157.8583 }
     ];
+
+    /* 色指数(B-V)からスペクトル型(O,B,A,F,G,K,M)を判定 */
+    function getSpectralClass(bv) {
+      if (bv < -0.2) return 'O';
+      if (bv < 0.0)  return 'B';
+      if (bv < 0.3)  return 'A';
+      if (bv < 0.6)  return 'F';
+      if (bv < 0.8)  return 'G';
+      if (bv < 1.3)  return 'K';
+      return 'M';
+    }
+
+    /* 等級(mag)からオクターブ倍率を取得 
+       3等星を基準 (1倍)。明るい星(mag < 3)はオクターブ下げ、暗い星(mag > 3)はオクターブ上げる */
+    function getOctaveFactor(mag) {
+      const octaveShift = Math.round(mag - 3.0);
+      return Math.pow(2, octaveShift);
+    }
+
+    /* スペクトル型（青:高音〜赤:低音）と等級（オクターブ）に基づく周波数計算 */
+    function calculatePitch(mag, bv) {
+      const spectralClass = getSpectralClass(bv);
+      // O/B (青) ほど高く、M (赤) に近いほど低くなる音階インデックス割り当て
+      const spectralNoteMap = {
+        'O': 6, // Eb (高)
+        'B': 5, // Db
+        'A': 4, // C
+        'F': 3, // Bb
+        'G': 2, // Ab
+        'K': 1, // G
+        'M': 0  // F (低)
+      };
+
+      const noteIdx = spectralNoteMap[spectralClass] !== undefined ? spectralNoteMap[spectralClass] : 3;
+      const baseFreq = fNaturalMinorBase[noteIdx];
+      const octaveFactor = getOctaveFactor(mag);
+
+      // 可聴域内に収まるよう周波数を制限
+      let freq = baseFreq * octaveFactor;
+      while (freq > 3500) freq /= 2;
+      while (freq < 60)   freq *= 2;
+
+      return { freq, spectralClass };
+    }
 
     function clearGroup(group) {
       while (group.children.length > 0) {
@@ -1024,7 +1050,7 @@
         
         masterFilter = audioCtx.createBiquadFilter();
         masterFilter.type = 'lowpass';
-        masterFilter.frequency.setValueAtTime(2400, audioCtx.currentTime);
+        masterFilter.frequency.setValueAtTime(2000, audioCtx.currentTime); // よりマイルドな入眠向けフィルタ
         masterFilter.connect(audioCtx.destination);
       }
       if (audioCtx.state === 'suspended') {
@@ -1032,130 +1058,112 @@
       }
     }
 
-    /* クラシックピアノ風のサウンド合成 */
-    function schedulePianoSound(freq, volume, startTime, pan = 0) {
+    /* 各色（スペクトル型）に応じた入眠向け合成音源生成 */
+    function scheduleInstrumentSound(freq, volume, startTime, pan, spectralClass, isBass = false) {
       if (!audioCtx) return;
 
-      const duration = 3.5;
       const gainNode = audioCtx.createGain();
-
-      // パンの設定
       let pannerNode = null;
       if (audioCtx.createStereoPanner) {
         pannerNode = audioCtx.createStereoPanner();
-        pannerNode.pan.setValueAtTime(Math.max(-0.9, Math.min(0.9, pan)), startTime);
+        pannerNode.pan.setValueAtTime(Math.max(-0.85, Math.min(0.85, pan)), startTime);
         gainNode.connect(pannerNode);
         pannerNode.connect(masterFilter || audioCtx.destination);
       } else {
         gainNode.connect(masterFilter || audioCtx.destination);
       }
 
-      // 1. 打鍵時のハンマーアタックノイズ（コン」という短い低音）
-      const attackOsc = audioCtx.createOscillator();
-      const attackGain = audioCtx.createGain();
-      attackOsc.type = 'triangle';
-      attackOsc.frequency.setValueAtTime(freq * 0.5, startTime);
-      attackOsc.frequency.exponentialRampToValueAtTime(30, startTime + 0.03);
-      attackGain.gain.setValueAtTime(volume * 0.25, startTime);
-      attackGain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.03);
-      attackOsc.connect(attackGain);
-      attackGain.connect(gainNode);
-      attackOsc.start(startTime);
-      attackOsc.stop(startTime + 0.04);
-
-      // 2. ピアノ弦の複雑な倍音構造（基音 + 複数の高調波）
-      const harmonics = [
-        { mult: 1.0,  vol: 1.0,   decay: 1.0 },   // 基音
-        { mult: 2.0,  vol: 0.5,   decay: 0.8 },   // 第2高調波
-        { mult: 3.0,  vol: 0.25,  decay: 0.6 },   // 第3高調波
-        { mult: 4.01, vol: 0.12,  decay: 0.4 },   // 第4高調波（非調和性を持たせるためわずかにずらす）
-        { mult: 5.02, vol: 0.06,  decay: 0.3 }    // 第5高調波
-      ];
-
-      harmonics.forEach(h => {
-        const osc = audioCtx.createOscillator();
-        const hGain = audioCtx.createGain();
-
-        // 澄んだアコースティック感のあるサイン波をベースに使用
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(freq * h.mult, startTime);
-
-        const hVol = volume * h.vol * 0.18;
-        const hDecay = duration * h.decay;
-
-        // ピアノ特有のエンベロープ（鋭い立ち上がり ➔ すばやい初期減衰 ➔ 長い余韻）
-        hGain.gain.setValueAtTime(0.0001, startTime);
-        hGain.gain.linearRampToValueAtTime(hVol, startTime + 0.008); 
-        hGain.gain.exponentialRampToValueAtTime(hVol * 0.3, startTime + 0.25);
-        hGain.gain.exponentialRampToValueAtTime(0.0001, startTime + hDecay);
-
-        osc.connect(hGain);
-        hGain.connect(gainNode);
-
-        osc.start(startTime);
-        osc.stop(startTime + hDecay);
-      });
-    }
-
-    function scheduleStarSound(freq, volume, startTime, pan = 0, isBass = false) {
-      if (!audioCtx) return;
-
-      if (currentTimbre === 'piano' && !isBass) {
-        schedulePianoSound(freq, volume, startTime, pan);
-        return;
-      }
-
-      const osc = audioCtx.createOscillator();
-      const gainNode = audioCtx.createGain();
-
-      osc.frequency.setValueAtTime(freq, startTime);
-
+      // 低音域（ブライト星/ベース音）の音源生成
       if (isBass) {
+        const osc = audioCtx.createOscillator();
         osc.type = 'sine';
         const duration = 6.0;
         gainNode.gain.setValueAtTime(0.0001, startTime);
-        gainNode.gain.linearRampToValueAtTime(0.25, startTime + 0.6);
+        gainNode.gain.linearRampToValueAtTime(0.2, startTime + 0.8);
         gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
         osc.connect(gainNode);
-        if (audioCtx.createStereoPanner) {
-          const panner = audioCtx.createStereoPanner();
-          panner.pan.setValueAtTime(pan, startTime);
-          gainNode.connect(panner);
-          panner.connect(masterFilter || audioCtx.destination);
-        } else {
-          gainNode.connect(masterFilter || audioCtx.destination);
-        }
-
         osc.start(startTime);
         osc.stop(startTime + duration);
-      } else {
-        osc.type = 'sine';
-        const duration = (currentTimbre === 'synth') ? 3.5 : 2.2;
+        return;
+      }
 
+      // 色 (スペクトル型) ごとの音色合成
+      if (spectralClass === 'O' || spectralClass === 'B') {
+        // 【青・青白星】 カリンバ / クリスタルライヤー（澄んだ透明感）
+        const osc = audioCtx.createOscillator();
+        const osc2 = audioCtx.createOscillator();
+        osc.type = 'sine';
+        osc2.type = 'triangle';
+        
+        osc.frequency.setValueAtTime(freq, startTime);
+        osc2.frequency.setValueAtTime(freq * 2.001, startTime);
+
+        const duration = 2.8;
         gainNode.gain.setValueAtTime(0.0001, startTime);
-        gainNode.gain.linearRampToValueAtTime(volume * 0.2, startTime + 0.08);
+        gainNode.gain.linearRampToValueAtTime(volume * 0.22, startTime + 0.012);
         gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
         osc.connect(gainNode);
+        osc2.connect(gainNode);
+        osc.start(startTime);
+        osc2.start(startTime);
+        osc.stop(startTime + duration);
+        osc2.stop(startTime + duration);
 
-        if (audioCtx.createStereoPanner) {
-          const panner = audioCtx.createStereoPanner();
-          panner.pan.setValueAtTime(Math.max(-0.9, Math.min(0.9, pan)), startTime);
-          gainNode.connect(panner);
-          panner.connect(masterFilter || audioCtx.destination);
-        } else {
-          gainNode.connect(masterFilter || audioCtx.destination);
-        }
+      } else if (spectralClass === 'A' || spectralClass === 'F') {
+        // 【白・黄白星】 クラシックピアノ（優しく豊かな減衰音）
+        const osc = audioCtx.createOscillator();
+        const osc2 = audioCtx.createOscillator();
+        osc.type = 'sine';
+        osc2.type = 'sine';
 
+        osc.frequency.setValueAtTime(freq, startTime);
+        osc2.frequency.setValueAtTime(freq * 2.0, startTime);
+
+        const duration = 3.2;
+        gainNode.gain.setValueAtTime(0.0001, startTime);
+        gainNode.gain.linearRampToValueAtTime(volume * 0.25, startTime + 0.015);
+        gainNode.gain.exponentialRampToValueAtTime(volume * 0.08, startTime + 0.3);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+
+        osc.connect(gainNode);
+        osc2.connect(gainNode);
+        osc.start(startTime);
+        osc2.start(startTime);
+        osc.stop(startTime + duration);
+        osc2.stop(startTime + duration);
+
+      } else if (spectralClass === 'G' || spectralClass === 'K') {
+        // 【黄・オレンジ星】 アコースティックギター / ハープ（温かい弦のアタック）
+        const osc = audioCtx.createOscillator();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, startTime);
+
+        const duration = 2.5;
+        gainNode.gain.setValueAtTime(0.0001, startTime);
+        gainNode.gain.linearRampToValueAtTime(volume * 0.20, startTime + 0.02);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+
+        osc.connect(gainNode);
+        osc.start(startTime);
+        osc.stop(startTime + duration);
+
+      } else {
+        // 【赤星 (M型)】 温かいシンセパッド / ヴァイブ（深みと丸みのある余韻）
+        const osc = audioCtx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, startTime);
+
+        const duration = 4.0;
+        gainNode.gain.setValueAtTime(0.0001, startTime);
+        gainNode.gain.linearRampToValueAtTime(volume * 0.22, startTime + 0.15); // やわらかな立ち上がり
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+
+        osc.connect(gainNode);
         osc.start(startTime);
         osc.stop(startTime + duration);
       }
-
-      osc.onended = () => {
-        osc.disconnect();
-        gainNode.disconnect();
-      };
     }
 
     function triggerStarFlash(starIndex) {
@@ -1167,7 +1175,6 @@
       }
     }
 
-    /* メイン画面（3D AR空間）上での光演出・波紋トリガー */
     function triggerMainScreenFlash(x, y) {
       mainScreenFlashes.push({
         x,
@@ -1179,7 +1186,6 @@
       });
     }
 
-    /* メイン画面のエフェクト描画更新 */
     function updateAndDrawMainScreenFlashes() {
       if (!effectCtx) return;
       effectCtx.clearRect(0, 0, effectCanvas.width, effectCanvas.height);
@@ -1191,7 +1197,6 @@
 
         effectCtx.save();
 
-        // 1. 中央の強力な発光（フラッシュ）
         if (flash.coreBrightness > 0) {
           effectCtx.beginPath();
           effectCtx.arc(flash.x, flash.y, 8, 0, Math.PI * 2);
@@ -1201,7 +1206,6 @@
           effectCtx.fill();
         }
 
-        // 2. 外側に広がる光のリング（波紋）
         effectCtx.beginPath();
         effectCtx.arc(flash.x, flash.y, flash.radius, 0, Math.PI * 2);
         effectCtx.strokeStyle = `rgba(186, 230, 253, ${flash.opacity})`;
@@ -1212,7 +1216,6 @@
 
         effectCtx.restore();
 
-        // アニメーション進行
         flash.radius += 1.5;
         flash.opacity -= 0.03;
         flash.coreBrightness -= 0.06;
@@ -1223,7 +1226,6 @@
       }
     }
 
-    /* 星通過時の波紋＆光の演出処理（サムネイル用） */
     function triggerThumbnailFlash(itemId, normX, normY) {
       activeFlashes.push({
         itemId,
@@ -1404,7 +1406,7 @@
 
         if (!playedStarIndices.has(idx) && progress >= currentTargetAxis) {
           
-          if (currentTime - lastSoundTime < 0.1 && Math.random() > 0.4) {
+          if (currentTime - lastSoundTime < 0.12 && Math.random() > 0.4) {
             playedStarIndices.add(idx);
             return;
           }
@@ -1417,29 +1419,27 @@
           playedStarIndices.add(idx);
           lastSoundTime = currentTime;
 
-          const isBright = star.mag < 2.0;
+          const isBright = star.mag < 1.5;
 
           if (isBright) {
             const bassIndex = Math.floor(pitchAxis * (bassScale.length - 1));
             const freq = bassScale[bassIndex];
             const pan = (pitchAxis - 0.5) * 1.6;
-            scheduleStarSound(freq, 0.4, currentTime, pan, true);
+            scheduleInstrumentSound(freq, 0.35, currentTime, pan, 'M', true);
           } else {
             const normMag = Math.max(-1.5, Math.min(8.5, star.mag));
             const volume = Math.max(0.03, 0.25 - ((normMag + 1.5) / 10.0) * 0.22);
-
-            const scaleIndex = Math.floor(pitchAxis * (fPentatonicScale.length - 1));
-            const freq = fPentatonicScale[scaleIndex];
             const pan = (pitchAxis - 0.5) * 1.8;
 
-            scheduleStarSound(freq, volume, currentTime, pan, false);
+            // Fナチュラルマイナースケール & 3等星基準オクターブ周波数・色別楽器での音響生成
+            const pitchData = calculatePitch(star.mag, star.bv);
+            scheduleInstrumentSound(pitchData.freq, volume, currentTime, pan, pitchData.spectralClass, false);
           }
 
           if (star.origIndex !== undefined) {
             triggerStarFlash(star.origIndex);
           }
 
-          // メイン画面のバーライン上の位置へ光演出を発生させる
           const flashX = star.normX * windowWidth;
           const flashY = star.normY * windowHeight;
           triggerMainScreenFlash(flashX, flashY);
@@ -1688,17 +1688,12 @@
     const accordionArrow = document.getElementById('accordion-arrow');
     const reloadBtn = document.getElementById('reload-btn');
     const saveBtn = document.getElementById('save-btn');
-    const timbreSelect = document.getElementById('timbre-select');
     const imageModal = document.getElementById('image-modal');
 
     imageModal.addEventListener('click', closeModal);
 
     saveBtn.addEventListener('click', () => {
       saveCurrentStarfield();
-    });
-
-    timbreSelect.addEventListener('change', (e) => {
-      currentTimbre = e.target.value;
     });
 
     sidebarToggle.addEventListener('click', () => {
